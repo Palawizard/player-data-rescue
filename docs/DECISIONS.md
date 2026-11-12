@@ -8,9 +8,13 @@ Status: Accepted.
 
 The project reuses the layout of Pala's Item Clear: one standalone Gradle project per band and loader under `versions/`, a `versions/version-matrix.json` file shared by the build, smoke and release tooling, and per-band Gradle wrappers. Unlike Pala's Item Clear, the 1.20.1 band is also a set of standalone projects instead of an Architectury Loom root.
 
-The shared logic lives in a single pure-Java core that every band includes. How the bands include it (a source directory or a subproject) is settled in M0 and recorded here. Shared logic is never copied into a band.
+The shared logic lives in a single pure-Java core that every band includes. Shared logic is never copied into a band.
+
+How the bands include the core (settled in M0): `core/` is a standalone Gradle project with its own wrapper, where the JUnit tests and the formatting check run on Java 17. Each band adds `core/src/main/java` as a second source directory of its `main` source set, through `versions/shared/band.gradle`, and compiles it with the band's own Java release. The core classes end up in the band's JAR next to the loader code. `mod_version` and the other mod properties are read from the root `gradle.properties` by the core and by every band.
 
 Why: the layout already ships 21 artifacts for Pala's Item Clear, with working smoke and release tooling, and avoiding Architectury keeps the runtime dependency list empty (ADR-003).
+
+Why a source directory and not a subproject or a core JAR: the bands are separate Gradle builds on different Gradle versions (8.14 for ForgeGradle 6, 9.x for the others), so a shared subproject would need a composite build across those versions. A source directory couples nothing at build time. It also avoids jar-in-jar, shading and package relocation: each JAR holds one copy of the core, compiled for the band's Java version, and nothing else to load. The core's own build enforces this: it compiles with `--release 17` and has no Minecraft or loader class on its classpath, so a Minecraft import in the core fails there before any band builds.
 
 ## ADR-002: Pure core, thin loader code
 
