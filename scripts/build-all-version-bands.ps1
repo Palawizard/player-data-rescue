@@ -22,7 +22,8 @@ function Add-Result {
 
 if (-not $SkipCore) {
     try {
-        Invoke-Gradle -ProjectDirectory (Join-Path $ProjectRoot 'core') -Arguments @('clean', 'build')
+        $core = (Get-VersionMatrix).core
+        Invoke-Gradle -ProjectDirectory (Join-Path $ProjectRoot $core.path) -GradleJava $core.gradleJava -Arguments @('clean', 'build')
         Add-Result -Band 'core' -Loader '-' -Status 'PASS' -Detail 'unit tests and formatting'
     } catch {
         Add-Result -Band 'core' -Loader '-' -Status 'FAIL' -Detail $_.Exception.Message
@@ -45,7 +46,7 @@ foreach ($band in (Get-VersionMatrix).bands) {
             if ($props['minecraft_version_range'] -notin @($band.declaredRange, ($band.declaredRange -replace '^\[(.*)\]$', '$1'))) {
                 throw "gradle.properties declares $($props['minecraft_version_range']), the matrix says $($band.declaredRange)."
             }
-            Invoke-Gradle -ProjectDirectory (Get-BandDirectory $loader) -Arguments @('clean', 'build')
+            Invoke-Gradle -ProjectDirectory (Get-BandDirectory $loader) -GradleJava $loader.gradleJava -Arguments @('clean', 'build')
             Add-Result -Band $band.id -Loader $loaderName -Status 'PASS' -Detail $loader.artifact
         } catch {
             Add-Result -Band $band.id -Loader $loaderName -Status 'FAIL' -Detail $_.Exception.Message

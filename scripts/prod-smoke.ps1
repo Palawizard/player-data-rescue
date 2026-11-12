@@ -227,7 +227,7 @@ function Invoke-Server {
 }
 
 if (-not $SkipBuild) {
-    Invoke-Gradle -ProjectDirectory (Get-BandDirectory $loaderConfig) -Arguments @('build')
+    Invoke-Gradle -ProjectDirectory (Get-BandDirectory $loaderConfig) -GradleJava $loaderConfig.gradleJava -Arguments @('build')
 }
 
 if ($Fresh -and (Test-Path -LiteralPath $serverDir)) { Remove-Item -LiteralPath $serverDir -Recurse -Force }

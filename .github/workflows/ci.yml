@@ -54,9 +54,14 @@ jobs:
         with:
           cache-provider: basic
 
+      # Gradle runs on the core's gradleJava from versions/version-matrix.json.
       - name: Build, check formatting and run tests
-        working-directory: core
-        run: ./gradlew clean build --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64
+        run: |
+          gradle_java=$(jq -r '.core.gradleJava' versions/version-matrix.json)
+          JAVA_HOME="$(printenv "JAVA_HOME_${gradle_java}_X64")" || { echo "No JDK ${gradle_java} set up."; exit 1; }
+          export JAVA_HOME
+          cd core
+          ./gradlew clean build --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64
 
   bands:
     name: List bands
@@ -71,7 +76,7 @@ jobs:
         id: matrix
         run: |
           matrix=$(jq -c '{include: [.bands[] as $b | $b.loaders | to_entries[]
-            | {band: $b.id, loader: .key, path: .value.path, artifact: .value.artifact}]}' versions/version-matrix.json)
+            | {band: $b.id, loader: .key, path: .value.path, artifact: .value.artifact, gradleJava: .value.gradleJava}]}' versions/version-matrix.json)
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   build-band:
@@ -86,7 +91,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      # Gradle runs on Java 21 and compiles each band with its own toolchain.
+      # Gradle runs on the band's gradleJava and compiles with the band's own toolchain.
       - name: Set up JDKs
         uses: actions/setup-java@v5
         with:
@@ -103,7 +108,12 @@ jobs:
 
       - name: Build
         working-directory: ${{ matrix.path }}
-        run: ./gradlew clean build --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64,JAVA_HOME_25_X64
+        env:
+          GRADLE_JAVA: ${{ matrix.gradleJava }}
+        run: |
+          JAVA_HOME="$(printenv "JAVA_HOME_${GRADLE_JAVA}_X64")" || { echo "No JDK ${GRADLE_JAVA} set up."; exit 1; }
+          export JAVA_HOME
+          ./gradlew clean build --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64,JAVA_HOME_25_X64
 
       - name: Smoke test the release JAR on a real dedicated server
         shell: pwsh

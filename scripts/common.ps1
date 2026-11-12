@@ -65,15 +65,28 @@ function Get-JavaExe {
     Join-Path (Join-Path (Get-JdkHome -Version $Version) 'bin') $name
 }
 
+function Get-WrapperGradleVersion {
+    param([string]$ProjectDirectory)
+    $props = Read-Properties (Join-Path $ProjectDirectory 'gradle/wrapper/gradle-wrapper.properties')
+    if ($props['distributionUrl'] -match 'gradle-([0-9.]+)-(bin|all)\.zip') { return [version]$Matches[1] }
+    throw "Cannot read the Gradle version of the wrapper in $ProjectDirectory."
+}
+
 function Invoke-Gradle {
-    # Gradle itself runs on Java 21 (Gradle 8.14 cannot run on Java 25); each band
-    # compiles through its own toolchain, found through the installation paths.
-    param([string]$ProjectDirectory, [string[]]$Arguments)
+    # Gradle itself runs on the project's gradleJava from versions/version-matrix.json
+    # (21 for the Gradle 8.14 bands, 25 for the Gradle 9.x ones); each band compiles
+    # through its own toolchain, found through the installation paths.
+    param([string]$ProjectDirectory, [int]$GradleJava, [string[]]$Arguments)
     $wrapper = if ($OnWindows) { Join-Path $ProjectDirectory 'gradlew.bat' } else { Join-Path $ProjectDirectory 'gradlew' }
     if (-not (Test-Path -LiteralPath $wrapper)) { throw "No Gradle wrapper in $ProjectDirectory." }
+    if (-not $GradleJava) { throw "No gradleJava given for $ProjectDirectory." }
+    $gradleVersion = Get-WrapperGradleVersion $ProjectDirectory
+    if ($gradleVersion.Major -lt 9 -and $GradleJava -gt 24) {
+        throw "Gradle $gradleVersion cannot run on Java $GradleJava ($ProjectDirectory). Set gradleJava to 24 or lower."
+    }
     $paths = @(17, 21, 25 | ForEach-Object { Get-JdkHome -Version $_ -Optional } | Where-Object { $_ })
     $previousJavaHome = $env:JAVA_HOME
-    $env:JAVA_HOME = Get-JdkHome -Version 21
+    $env:JAVA_HOME = Get-JdkHome -Version $GradleJava
     Push-Location -LiteralPath $ProjectDirectory
     try {
         & $wrapper @Arguments '--no-daemon' "-Dorg.gradle.java.installations.paths=$($paths -join ',')"
