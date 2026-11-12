@@ -93,3 +93,13 @@ Status: Accepted.
 When placement fails even with the minimal profile, the mod restores the vanilla outcome and writes a diagnosis report. A key that keeps failing becomes one recurring issue instead of a new incident at every login.
 
 Why: on 26.3 and 1.21.11, reported cases include errors that remain after deleting both player files, or that appear on a brand new world. No saved data can fix those. Retrying would loop, and a new incident at every login would bury the useful report.
+
+## ADR-009: Gradle JVM per project
+
+Status: Accepted.
+
+Each project in `versions/version-matrix.json` (every band and loader, and the core) has a `gradleJava` field: the Java version Gradle itself runs on. It is separate from `java`, the release the band compiles for. The build scripts and the CI set `JAVA_HOME` to that version before calling the project's wrapper, and the scripts refuse a Gradle 8.x project with a `gradleJava` above 24.
+
+Current values: 21 for the ForgeGradle 6 bands (Forge 1.20.1 and 1.21.1, on Gradle 8.14), 21 for the core, and 25 for every other band (Gradle 9.x).
+
+Why: running every project on one Java version does not work. Gradle 8.14 runs on Java 24 at most, and ForgeGradle 6 needs Gradle 8.x. Fabric Loom 1.18 and later declare that Gradle must run on Java 25, and from Minecraft 26.1 Fabric requires Java 25 for the Gradle JVM. A single Java 21 runtime would have kept the Fabric bands on Loom 1.17 and blocked any Minecraft version that needs a newer Loom.

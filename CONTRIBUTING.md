@@ -50,7 +50,7 @@ A change is ready for review when:
 
 ### Commands
 
-The scripts run on PowerShell 7 (`pwsh`, Windows, Linux or macOS) and on Windows PowerShell 5.1, from the repository root. They need JDK 17, 21 and 25 installed. Gradle runs on Java 21 and compiles each band with its own toolchain.
+The scripts run on PowerShell 7 (`pwsh`, Windows, Linux or macOS) and on Windows PowerShell 5.1, from the repository root. They need JDK 17, 21 and 25 installed. Each project runs Gradle on the Java version set by `gradleJava` in `versions/version-matrix.json` and compiles with the band's own toolchain. To run a band's wrapper by hand, set `JAVA_HOME` to that version first.
 
 ```text
 ./scripts/build-all-version-bands.ps1 -SkipSmoke                 core tests, formatting, every band
