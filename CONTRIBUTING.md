@@ -48,6 +48,20 @@ A change is ready for review when:
 5. New user-facing text has translation keys.
 6. The docs that describe the changed behaviour are updated in the same pull request.
 
+### Commands
+
+The scripts run on PowerShell 7 (`pwsh`, Windows, Linux or macOS) and on Windows PowerShell 5.1, from the repository root. They need JDK 17, 21 and 25 installed. Gradle runs on Java 21 and compiles each band with its own toolchain.
+
+```text
+./scripts/build-all-version-bands.ps1 -SkipSmoke                 core tests, formatting, every band
+./scripts/build-all-version-bands.ps1                            the same, then the smoke test of every band
+./scripts/prod-smoke.ps1 -BandId 1.21-1.21.4 -Loader neoforge    one band and loader on a real server
+./scripts/prod-smoke-all.ps1 -SkipBuild                          every band and loader on a real server
+./scripts/check-release-artifacts.ps1 -SkipBuild                 contents of the built JARs
+```
+
+Band ids and loaders are listed in `versions/version-matrix.json`. Server installs are cached in `build/prod-smoke`, and `prod-smoke-all.ps1` skips a JAR that already passed. To fix formatting, run `./gradlew spotlessApply` in `core/` or in a band folder.
+
 ## Releases
 
 Releases are cut from `dev` and promoted to `main`. The steps are in [docs/release-checklist.md](docs/release-checklist.md).
