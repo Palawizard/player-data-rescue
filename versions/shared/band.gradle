@@ -1,0 +1,77 @@
+// Applied by every band after its plugins block. The core is compiled from source into
+// each band (ADR-001), with the band's own Java release, so no core JAR is shipped.
+
+def rootProps = new Properties()
+rootProject.file('../../gradle.properties').withInputStream { rootProps.load(it) }
+rootProps.each { key, value -> project.ext.set(key, value) }
+
+def javaRelease = project.java_release.toInteger()
+
+version = project.mod_version
+group = project.mod_group
+
+base {
+    archivesName = "player-data-rescue-${project.minecraft_version}-${project.loader_name}"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(javaRelease)
+    }
+}
+
+sourceSets {
+    main {
+        java.srcDir rootProject.file('../../core/src/main/java')
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = javaRelease
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.withType(Jar).configureEach {
+    manifest {
+        attributes(
+                'Implementation-Title': 'player-data-rescue',
+                'Implementation-Version': project.version,
+                'Minecraft-Version': project.minecraft_version
+        )
+    }
+}
+
+def metadataProperties = [
+        mod_id                 : project.mod_id,
+        mod_name               : project.mod_name,
+        mod_version            : project.mod_version,
+        mod_license            : project.mod_license,
+        mod_authors            : project.mod_authors,
+        mod_description        : project.mod_description,
+        minecraft_version_range: project.minecraft_version_range,
+        loader_version_range   : project.loader_version_range
+]
+
+tasks.named('processResources', ProcessResources) {
+    inputs.properties metadataProperties
+    filesMatching(['fabric.mod.json', 'META-INF/mods.toml', 'META-INF/neoforge.mods.toml']) {
+        expand metadataProperties
+    }
+}
+
+pluginManager.withPlugin('com.diffplug.spotless') {
+    spotless {
+        java {
+            target 'src/**/*.java'
+            palantirJavaFormat('2.103.0')
+            removeUnusedImports()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+}
