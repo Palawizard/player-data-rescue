@@ -46,6 +46,9 @@ ext.testmodJarName = testmodJarName
 tasks.register('testmodJar', Jar) {
     from sourceSets.testmod.output
     archiveFileName = testmodJarName
+    manifest {
+        attributes('Implementation-Title': 'pdrtest (dev only)', 'Implementation-Version': '0.0.0')
+    }
     destinationDirectory = layout.buildDirectory.dir(project.findProperty('testmodRemapped') ? 'testmod-dev' : 'testmod')
 }
 

@@ -10,6 +10,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ICapabilitySerializable;
 import net.minecraftforge.common.util.LazyOptional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A player capability saved under {@code ForgeCaps}. Its reader throws for players in
@@ -17,6 +19,8 @@ import net.minecraftforge.common.util.LazyOptional;
  * that its own reader rejects. Without those modes it reads both forms, like a fixed release.
  */
 final class BrokenAttachment implements ICapabilitySerializable<Tag> {
+    private static final Logger LOGGER = LoggerFactory.getLogger("pdrtest");
+
     private final Player player;
     private int value = 42;
 
@@ -31,7 +35,14 @@ final class BrokenAttachment implements ICapabilitySerializable<Tag> {
 
     @Override
     public Tag serializeNBT(HolderLookup.Provider registries) {
-        return unreadable() ? StringTag.valueOf("unreadable") : IntTag.valueOf(value);
+        boolean unreadable = unreadable();
+        LOGGER.info(
+                "{}saved attachment {} of {} as {}",
+                TestModes.LOG_PREFIX,
+                TestModes.ATTACHMENT_ID,
+                player.getGameProfile().getName(),
+                unreadable ? "unreadable" : "int");
+        return unreadable ? StringTag.valueOf("unreadable") : IntTag.valueOf(value);
     }
 
     @Override
