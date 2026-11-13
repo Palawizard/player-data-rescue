@@ -4,11 +4,16 @@
 # a vehicle) and the dev-only test mod then renames ids, cuts the file or breaks an attachment,
 # as listed in docs/TESTING.md. A second join records what the game does with that data.
 # Works on Windows PowerShell 5.1 and on PowerShell 7.
+# Uses from prod-smoke.ps1: $band, $BandId, $Loader, $serverDir, $javaExe, $ServerPort,
+# $RconPort, $rconPassword, and Read-ExactBytes, Send-RconPacket, Read-RconPacketId.
+# Proof is a test mod log line expected while preparing; JoinProof is expected at each
+# later join, so a scenario cannot pass without the failure it is meant to cause.
 
 $scenarioDefinitions = @(
     @{ Id = 'S1'; Player = 'S1Bot'; Prepare = @('rename-item'); Join = @('');
         Setup = @('item replace entity S1Bot container.17 with minecraft:brick 12'); Proof = 'renamed the item in slot 17 of S1Bot' }
-    @{ Id = 'S2'; Player = 'S2Bot'; Prepare = @('attach'); Join = @('attach,attachment-throws'); Setup = @(); Proof = '' }
+    @{ Id = 'S2'; Player = 'S2Bot'; Prepare = @('attach'); Join = @('attach,attachment-throws'); Setup = @();
+        Proof = 'saved attachment pdrtest:broken of S2Bot as int'; JoinProof = 'pdrtest: deliberate failure: reading attachment pdrtest:broken of S2Bot' }
     @{ Id = 'S3'; Player = 'S3Bot'; Prepare = @('rename-effect'); Join = @('');
         Setup = @('effect give S3Bot minecraft:speed 600'); Proof = 'renamed 1 effect\(s\) of S3Bot' }
     @{ Id = 'S4'; Player = 'S4Bot'; Prepare = @('rename-vehicle'); Join = @('');
@@ -17,8 +22,10 @@ $scenarioDefinitions = @(
         Proof = 'renamed the vehicle of S4Bot from minecraft:minecart' }
     @{ Id = 'S5'; Player = 'S5Bot'; Prepare = @('', 'truncate'); Join = @(''); Setup = @(); Proof = 'truncated .*\.dat of S5Bot' }
     @{ Id = 'S6'; Player = 'S6Bot'; Prepare = @('', 'truncate-both'); Join = @(''); Setup = @(); Proof = 'truncated .*\.dat_old of S6Bot' }
-    @{ Id = 'S11'; Player = 'S11Bot'; Prepare = @(); Join = @('throw-on-placement', 'throw-on-placement'); Setup = @(); Proof = '' }
-    @{ Id = 'S13'; Player = 'S13Bot'; Prepare = @('unreadable-attachment'); Join = @('unreadable-attachment'); Setup = @(); Proof = '' }
+    @{ Id = 'S11'; Player = 'S11Bot'; Prepare = @(); Join = @('throw-on-placement', 'throw-on-placement'); Setup = @(); Proof = '';
+        JoinProof = 'pdrtest: deliberate failure: placement of S11Bot' }
+    @{ Id = 'S13'; Player = 'S13Bot'; Prepare = @('unreadable-attachment'); Join = @('unreadable-attachment', 'unreadable-attachment'); Setup = @();
+        Proof = 'saved attachment pdrtest:broken of S13Bot as unreadable'; JoinProof = 'pdrtest: deliberate failure: attachment pdrtest:broken of S13Bot cannot read back' }
 )
 
 # What vanilla and the loader do with each broken save, before any rescue code exists. 'invalid'
@@ -39,6 +46,7 @@ $vanillaOutcomes = @{
 
 $scenarioModes = @{}
 $scenarioServer = $null
+$scenarioDeadline = $null
 
 function Get-ProtocolVersion {
     switch ($band.compileTarget) {
@@ -93,12 +101,17 @@ function Get-LogSince {
     return $text.Substring($Offset)
 }
 
+function Assert-ScenarioTime {
+    if ($scenarioServer.HasExited) { throw 'The server stopped during the scenarios.' }
+    if ((Get-Date) -gt $scenarioDeadline) { throw "The scenarios did not finish within -TimeoutMinutes $TimeoutMinutes." }
+}
+
 function Wait-ForLog {
     param([int]$Offset, [string]$Pattern, [int]$Seconds = 60)
     $deadline = (Get-Date).AddSeconds($Seconds)
     while ((Get-Date) -lt $deadline) {
         if ((Get-LogSince -Offset $Offset) -match $Pattern) { return $true }
-        if ($scenarioServer.HasExited) { throw 'The server stopped during the scenarios.' }
+        Assert-ScenarioTime
         Start-Sleep -Milliseconds 500
     }
     return $false
@@ -107,7 +120,8 @@ function Wait-ForLog {
 function Start-JoinBot {
     param([string]$Player, [int]$StaySeconds)
     $output = Join-Path $serverDir "bot-$Player.log"
-    $botArgs = @('JoinBot.java', '--port', "$ServerPort", '--protocol', "$(Get-ProtocolVersion)", '--name', $Player,
+    Assert-ScenarioTime
+    $botArgs = @('-cp', 'join-bot', 'JoinBot', '--port', "$ServerPort", '--protocol', "$(Get-ProtocolVersion)", '--name', $Player,
         '--stay-seconds', "$StaySeconds", '--timeout-seconds', '120')
     $startArgs = @{
         FilePath               = $javaExe
@@ -178,10 +192,20 @@ function Invoke-PrepareJoin {
     return $offset
 }
 
+function Install-JoinBot {
+    # Compiled once per run instead of once per join by the single-file source launcher.
+    $botDir = Join-Path $serverDir 'join-bot'
+    if (Test-Path -LiteralPath $botDir) { Remove-Item -LiteralPath $botDir -Recurse -Force }
+    $javac = Join-Path (Split-Path -Parent $javaExe) $(if ($OnWindows) { 'javac.exe' } else { 'javac' })
+    & $javac -d $botDir (Join-Path $ProjectRoot 'testmod/join-bot/JoinBot.java')
+    if ($LASTEXITCODE -ne 0) { throw "javac failed on the join bot (exit code $LASTEXITCODE)." }
+}
+
 function Invoke-SmokeScenarios {
-    param([System.Diagnostics.Process]$ServerProcess)
+    param([System.Diagnostics.Process]$ServerProcess, [datetime]$Deadline)
     $script:scenarioServer = $ServerProcess
-    Copy-Item -LiteralPath (Join-Path $ProjectRoot 'testmod/join-bot/JoinBot.java') -Destination $serverDir -Force
+    $script:scenarioDeadline = $Deadline
+    Install-JoinBot
     $failures = @()
     $summary = @()
     foreach ($scenario in $scenarioDefinitions) {
@@ -203,6 +227,9 @@ function Invoke-SmokeScenarios {
                 $joinLog = Get-LogSince -Offset $offset
                 $result = Get-JoinOutcome -BotOutput $botOutput -Player $scenario.Player -ServerLog $joinLog
                 $placeFailed = $joinLog -match "Couldn't place player in world"
+                if ($scenario.JoinProof -and -not ($joinLog -match $scenario.JoinProof)) {
+                    $failures += "$id join did not hit the test mod failure: the log has no '$($scenario.JoinProof)' line."
+                }
                 $line = "$id $($scenario.Player): $($result.Outcome) ($($result.Detail)); log has 'Couldn't place player in world': $placeFailed; vanilla outcome on record: $expected"
                 $summary += $line
                 if ($result.Outcome -ne $expected) { $failures += $line }

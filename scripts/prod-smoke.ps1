@@ -161,18 +161,7 @@ function Read-RconPacketId {
 }
 
 function Stop-ServerWithRcon {
-    $client = New-Object System.Net.Sockets.TcpClient
-    try {
-        $client.Connect('127.0.0.1', $RconPort)
-        $stream = $client.GetStream()
-        $stream.ReadTimeout = 10000
-        Send-RconPacket -Stream $stream -RequestId 1 -Type 3 -Body $rconPassword
-        if ((Read-RconPacketId -Stream $stream) -ne 1) { throw 'RCON authentication failed.' }
-        Send-RconPacket -Stream $stream -RequestId 2 -Type 2 -Body 'stop'
-        Read-RconPacketId -Stream $stream | Out-Null
-    } finally {
-        $client.Dispose()
-    }
+    Invoke-RconCommand -Command 'stop' | Out-Null
 }
 
 function Get-ServerLog {
@@ -215,7 +204,7 @@ function Invoke-Server {
             $started = $log -match 'Done \([^)]+\)! For help'
             if ($started -and -not $scenariosDone) {
                 $scenariosDone = $true
-                try { Invoke-SmokeScenarios -ServerProcess $process } catch { $scenarioError = $_.Exception.Message }
+                try { Invoke-SmokeScenarios -ServerProcess $process -Deadline $deadline } catch { $scenarioError = $_.Exception.Message }
             }
             if ($started -and -not $stopSent) {
                 # The RCON listener can open a little after the "Done" line.
@@ -236,11 +225,11 @@ function Invoke-Server {
     $log = Get-ServerLog
     $tail = (Get-Content -LiteralPath $stderr -Tail 30 -ErrorAction SilentlyContinue) -join [Environment]::NewLine
     if (-not $started) { throw "$BandId/$Loader never reached 'Done! For help'.$([Environment]::NewLine)$tail" }
+    if ($scenarioError) { throw $scenarioError }
     $loadedLine = ($log -split "`r?`n" | Where-Object { $_.Contains($expectedLine) } | Select-Object -First 1)
     if (-not $loadedLine) { throw "$BandId/$Loader started, but the log has no '$expectedLine' line." }
     if (-not $stopSent) { throw "$BandId/$Loader could not be stopped over RCON." }
     if ($log -notmatch 'Stopping (the )?server') { throw "$BandId/$Loader did not log a clean shutdown." }
-    if ($scenarioError) { throw $scenarioError }
     Write-Host "  log: $($loadedLine.Trim())"
     Write-Host "$BandId/$Loader OK: the release JAR loaded on a real dedicated server, which then stopped cleanly." -ForegroundColor Green
 }
