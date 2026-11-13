@@ -18,6 +18,9 @@ Both sources are handled. In every flow below, the *source file* is whichever ap
 | T1 | Reading or decoding the player data throws while the player is loaded or placed. | Disconnect with "Invalid player data". The log shows `Couldn't place player in world`. |
 | T2 | The source file exists and is not empty, but cannot be parsed (truncated or corrupted gzip or NBT). | Depends on the version. The player may be created fresh, and the next save overwrites the original. |
 | T3 | Code that runs during placement throws because of the player's data, for example a mod reacting to one of its attachments on login. | Same as T1. |
+| T4 (later release) | The data holds an entry that the game drops without any error: an item or an effect with an unknown id, a vehicle of an unknown entity type, or, on NeoForge, an attachment that fails to decode. | The player joins. The entry is lost at the next save, and nobody is told. |
+
+T1 to T3 are handled from the first release. T4 is planned for a later milestone (it needs its own hooks, before the game discards each entry), so until then the mod does not see these entries. What vanilla does with each of them is recorded per band in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Failures that do not come from the data
 
@@ -156,6 +159,8 @@ Player arguments accept online players. For `list`, `show` and `export`, they al
 
 Each scenario maps to automated tests: fixture tests, or the production-JAR smoke test with the dev-only test mod (see [TESTING.md](TESTING.md)).
 
+S1, S3, S4 and S7, and S2 on NeoForge, depend on T4. They are checked in the T4 milestone. Until then, the smoke test checks the vanilla outcome of these scenarios instead (the player joins and the entry is lost).
+
 | Id | Given | When | Then |
 |---|---|---|---|
 | S1 | P has an item from mod X in slot 17, and X is removed. | P joins. | P joins with every other slot intact. Slot 17 is quarantined with the suspect X (not installed). The original files are backed up and a report is written. |
@@ -165,7 +170,7 @@ Each scenario maps to automated tests: fixture tests, or the production-JAR smok
 | S5 | `<uuid>.dat` is truncated and `.dat_old` is valid. | P joins. | P joins with the `.dat_old` data. Both originals are backed up. The trigger is T2. |
 | S6 | Both files are unreadable. | P joins. | P joins as a new player. The originals are kept and the report says "unreadable file". |
 | S7 | S1 happened, then X is reinstalled. | An operator runs `restore all`. | The slot 17 item comes back once. A second `restore all` changes nothing. |
-| S8 | Singleplayer world whose host data in `level.dat` has S1's broken slot. | The world opens. | Same as S1, with the `level.dat` copies in `original/`. |
+| S8 | Singleplayer world whose host data in `level.dat` has S2's broken attachment (Forge or Fabric). | The world opens. | Same as S2, with the `level.dat` copies in `original/`. |
 | S9 | Dedicated server with the mod, client without it. | Any scenario. | The client connects normally. Messages use vanilla text components only. |
 | S10 | The mod is removed after incidents were recorded. | The world loads. | The world loads normally, and the `playerdatarescue/` folder is ignored. |
 | S11 | The test mod throws on every placement, whatever the data. | P joins twice. | Both joins end with the vanilla disconnect. One incident and one diagnosis report are written, saying the data is not the cause and naming the test mod. The second join does not retry a rescue. Nothing loops or crashes. |
