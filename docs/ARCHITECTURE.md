@@ -126,4 +126,4 @@ Storage, checked in M1 (see "Mod data on the player" above): Forge capabilities 
 
 ## Open questions
 
-- None for M2. The units that vanilla drops without an exception (S1, S3, S4, and S2 on NeoForge) are trigger T4 in [SPEC.md](SPEC.md). T4 is a later milestone with its own hooks, run before the game discards each unit; the rescue flow of M2 covers T1 to T3 only.
+- None for M2. The units that vanilla drops without an exception (S1, S3, S4, and S2 and S13 on NeoForge) are trigger T4 in [SPEC.md](SPEC.md). T4 is a later milestone with its own hooks, run before the game discards each unit; the rescue flow of M2 covers T1 to T3 only.

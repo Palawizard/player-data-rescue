@@ -159,7 +159,7 @@ Player arguments accept online players. For `list`, `show` and `export`, they al
 
 Each scenario maps to automated tests: fixture tests, or the production-JAR smoke test with the dev-only test mod (see [TESTING.md](TESTING.md)).
 
-S1, S3, S4 and S7, and S2 on NeoForge, depend on T4. They are checked in the T4 milestone. Until then, the smoke test checks the vanilla outcome of these scenarios instead (the player joins and the entry is lost).
+S1, S3, S4 and S7, and S2, S13 and S14 on NeoForge, depend on T4. They are checked in the T4 milestone. Until then, the smoke test checks the vanilla outcome of these scenarios instead (the player joins and the entry is lost).
 
 | Id | Given | When | Then |
 |---|---|---|---|
