@@ -1,0 +1,3 @@
+// Formatting check of the dev-only test mod and join bot sources, run with the core's wrapper:
+// core/gradlew -p testmod spotlessCheck. The bands compile these sources (versions/shared/band.gradle).
+rootProject.name = 'player-data-rescue-testmod'
