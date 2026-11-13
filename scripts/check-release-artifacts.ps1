@@ -9,7 +9,7 @@ param(
 
 # Checks that every band and loader produced exactly one release JAR with its loader
 # metadata, the core classes and the loader entrypoint, and that no metadata
-# placeholder was left unexpanded.
+# placeholder was left unexpanded. It also refuses any dev-only test mod or join bot file.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -63,6 +63,8 @@ foreach ($band in (Get-VersionMatrix).bands) {
                 foreach ($entry in $required) {
                     if ($entries -notcontains $entry) { throw "$($jar.Name) is missing $entry." }
                 }
+                $testFiles = @($entries | Where-Object { $_ -like "$packagePath/testmod/*" -or $_ -like 'pdrtest*' -or $_ -like '*JoinBot*' })
+                if ($testFiles.Count -gt 0) { throw "$($jar.Name) contains dev-only test files: $($testFiles -join ', ')." }
                 $reader = New-Object System.IO.StreamReader($zip.GetEntry($metadataPath).Open())
                 try { $metadata = $reader.ReadToEnd() } finally { $reader.Dispose() }
             } finally {

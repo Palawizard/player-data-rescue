@@ -4,6 +4,8 @@ plugins {
     id 'com.diffplug.spotless' version '8.11.0'
 }
 
+// The test mod JAR is remapped like the release JAR (see versions/shared/band.gradle).
+ext.testmodRemapped = true
 apply from: '../shared/band.gradle'
 
 repositories {
@@ -23,3 +25,11 @@ loom {
         }
     }
 }
+
+def remapTestmodJar = tasks.register('remapTestmodJar', net.fabricmc.loom.task.RemapJarTask) {
+    inputFile = tasks.named('testmodJar', Jar).flatMap { it.archiveFile }
+    archiveFileName = project.testmodJarName
+    destinationDirectory = layout.buildDirectory.dir('testmod')
+}
+
+tasks.named('build') { dependsOn remapTestmodJar }
