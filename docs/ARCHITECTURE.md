@@ -126,4 +126,4 @@ Storage, checked in M1 (see "Mod data on the player" above): Forge capabilities 
 
 ## Open questions
 
-- The rescue flow starts on a failure (T1, T3), but vanilla never fails on S1, S3 and S4: an item, an effect or a vehicle from a removed mod is dropped without an exception on every Tier A band, and NeoForge skips an attachment whose reader throws. Catching the placement failure alone cannot rescue those units. To decide before M2: detect them before vanilla drops them (a check of the known-decoder units on every join), or change those scenarios.
+- None for M2. The units that vanilla drops without an exception (S1, S3, S4, and S2 on NeoForge) are trigger T4 in [SPEC.md](SPEC.md). T4 is a later milestone with its own hooks, run before the game discards each unit; the rescue flow of M2 covers T1 to T3 only.
