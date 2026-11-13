@@ -26,6 +26,33 @@ sourceSets {
     }
 }
 
+// Dev-only test mod (docs/TESTING.md): its own source set and JAR under build/testmod,
+// never in build/libs, so it cannot reach a release. Loaders that remap add the step
+// that produces the final JAR and make 'build' depend on it.
+def testmodDirs = ['common', "common-${project.minecraft_version}", "${project.minecraft_version}-${project.loader_name}"]
+        .collect { rootProject.file("../../testmod/${it}") }
+
+sourceSets {
+    testmod {
+        java.srcDirs = testmodDirs.collect { new File(it, 'java') }
+        resources.srcDirs = [rootProject.file("../../testmod/${project.minecraft_version}-${project.loader_name}/resources")]
+        compileClasspath += sourceSets.main.compileClasspath
+    }
+}
+
+def testmodJarName = "pdrtest-${project.minecraft_version}-${project.loader_name}.jar"
+ext.testmodJarName = testmodJarName
+
+tasks.register('testmodJar', Jar) {
+    from sourceSets.testmod.output
+    archiveFileName = testmodJarName
+    destinationDirectory = layout.buildDirectory.dir(project.findProperty('testmodRemapped') ? 'testmod-dev' : 'testmod')
+}
+
+if (!project.findProperty('testmodRemapped')) {
+    tasks.named('build') { dependsOn 'testmodJar' }
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = javaRelease
