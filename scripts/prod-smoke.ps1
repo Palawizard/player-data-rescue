@@ -7,6 +7,7 @@ param(
     [string]$Loader,
     [switch]$SkipBuild,
     [switch]$Fresh,
+    [switch]$SkipScenarios,
     [int]$ServerPort = 25566,
     [int]$RconPort = 25576,
     [int]$TimeoutMinutes = 10
@@ -15,9 +16,12 @@ param(
 # Production smoke test: install the loader's real dedicated server for one band, drop
 # the packaged JAR into mods/, boot the server, check that the mod logged its loaded
 # line, then stop the server over RCON and check that it shut down cleanly. This tests
-# the file players install, not a dev run (gradlew runServer).
+# the file players install, not a dev run (gradlew runServer). Unless -SkipScenarios is
+# given, the dev-only test mod is installed too and the failure scenarios of
+# smoke-scenarios.ps1 run before the server is stopped.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
+. (Join-Path $PSScriptRoot 'smoke-scenarios.ps1')
 
 $band = (Get-VersionMatrix).bands | Where-Object { $_.id -eq $BandId } | Select-Object -First 1
 if (-not $band) { throw "Unknown band '$BandId'." }
@@ -48,6 +52,12 @@ function Get-ModJar {
     $name = "$($loaderConfig.artifact)-$($modProps['mod_version']).jar"
     $jar = Join-Path $libs $name
     if (-not (Test-Path -LiteralPath $jar)) { throw "No release JAR $name in $libs. Build the band first." }
+    return $jar
+}
+
+function Get-TestModJar {
+    $jar = Join-Path (Get-BandDirectory $loaderConfig) "build/testmod/pdrtest-$($band.compileTarget)-$Loader.jar"
+    if (-not (Test-Path -LiteralPath $jar)) { throw "No test mod JAR $jar. Build the band first." }
     return $jar
 }
 
@@ -93,6 +103,7 @@ function Write-ServerConfig {
     Set-Content -LiteralPath (Join-Path $serverDir 'eula.txt') -Value 'eula=true' -Encoding ascii
     Set-Content -LiteralPath (Join-Path $serverDir 'server.properties') -Encoding ascii -Value @(
         'online-mode=false'
+        'white-list=false'
         "server-port=$ServerPort"
         'enable-rcon=true'
         "rcon.port=$RconPort"
@@ -105,12 +116,13 @@ function Write-ServerConfig {
 }
 
 function Reset-ServerState {
-    param([string]$ModJar)
+    param([string]$ModJar, [string]$TestModJar)
     $mods = Join-Path $serverDir 'mods'
     if (Test-Path -LiteralPath $mods) { Remove-Item -LiteralPath $mods -Recurse -Force }
     New-Item -ItemType Directory -Path $mods -Force | Out-Null
     Copy-Item -LiteralPath $ModJar -Destination $mods
-    foreach ($stale in 'smokeworld', 'logs', 'crash-reports') {
+    if ($TestModJar) { Copy-Item -LiteralPath $TestModJar -Destination $mods }
+    foreach ($stale in 'smokeworld', 'logs', 'crash-reports', 'pdrtest.properties') {
         $path = Join-Path $serverDir $stale
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
     }
@@ -195,10 +207,16 @@ function Invoke-Server {
     $started = $false
     $stopSent = $false
     $rconFailures = 0
+    $scenariosDone = [bool]$SkipScenarios
+    $scenarioError = $null
     try {
         while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
             $log = Get-ServerLog
             $started = $log -match 'Done \([^)]+\)! For help'
+            if ($started -and -not $scenariosDone) {
+                $scenariosDone = $true
+                try { Invoke-SmokeScenarios -ServerProcess $process } catch { $scenarioError = $_.Exception.Message }
+            }
             if ($started -and -not $stopSent) {
                 # The RCON listener can open a little after the "Done" line.
                 try { Stop-ServerWithRcon; $stopSent = $true }
@@ -222,6 +240,7 @@ function Invoke-Server {
     if (-not $loadedLine) { throw "$BandId/$Loader started, but the log has no '$expectedLine' line." }
     if (-not $stopSent) { throw "$BandId/$Loader could not be stopped over RCON." }
     if ($log -notmatch 'Stopping (the )?server') { throw "$BandId/$Loader did not log a clean shutdown." }
+    if ($scenarioError) { throw $scenarioError }
     Write-Host "  log: $($loadedLine.Trim())"
     Write-Host "$BandId/$Loader OK: the release JAR loaded on a real dedicated server, which then stopped cleanly." -ForegroundColor Green
 }
@@ -235,6 +254,7 @@ New-Item -ItemType Directory -Path $serverDir -Force | Out-Null
 
 $javaExe = Get-JavaExe -Version $band.java
 $modJar = Get-ModJar
+$testModJar = if ($SkipScenarios) { $null } else { Get-TestModJar }
 
 $installKey = switch ($Loader) {
     'fabric' { "fabric $($band.compileTarget) $($bandProps['fabric_loader_version'])" }
@@ -264,7 +284,7 @@ if (-not $installed) {
 }
 
 Write-ServerConfig
-Reset-ServerState -ModJar $modJar
+Reset-ServerState -ModJar $modJar -TestModJar $testModJar
 if ($Loader -eq 'fabric') {
     $launchArgs = @('-Xmx2G', '-jar', 'fabric-server-launch.jar', 'nogui')
 } else {

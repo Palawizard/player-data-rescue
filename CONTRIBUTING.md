@@ -55,12 +55,13 @@ The scripts run on PowerShell 7 (`pwsh`, Windows, Linux or macOS) and on Windows
 ```text
 ./scripts/build-all-version-bands.ps1 -SkipSmoke                 core tests, formatting, every band
 ./scripts/build-all-version-bands.ps1                            the same, then the smoke test of every band
-./scripts/prod-smoke.ps1 -BandId 1.21-1.21.4 -Loader neoforge    one band and loader on a real server
+./scripts/prod-smoke.ps1 -BandId 1.21-1.21.4 -Loader neoforge    one band and loader on a real server, with the failure scenarios
 ./scripts/prod-smoke-all.ps1 -SkipBuild                          every band and loader on a real server
 ./scripts/check-release-artifacts.ps1 -SkipBuild                 contents of the built JARs
+./scripts/check-powershell-compat.ps1                            no PowerShell 7-only syntax in the scripts
 ```
 
-Band ids and loaders are listed in `versions/version-matrix.json`. Server installs are cached in `build/prod-smoke`, and `prod-smoke-all.ps1` skips a JAR that already passed. To fix formatting, run `./gradlew spotlessApply` in `core/` or in a band folder.
+Band ids and loaders are listed in `versions/version-matrix.json`. Server installs are cached in `build/prod-smoke`, and `prod-smoke-all.ps1` skips a band whose JARs and scenarios already passed. `prod-smoke.ps1 -SkipScenarios` only checks that the mod loads. To fix formatting, run `./gradlew spotlessApply` in `core/` or in a band folder, and `core/gradlew -p testmod spotlessApply` for the test mod and the join client. Scripts must not use PowerShell 7-only syntax (`??`, `?.`, the ternary operator, `&&`, `||`, `ForEach-Object -Parallel`): `check-powershell-compat.ps1` refuses it, and CI also parses every script with Windows PowerShell 5.1.
 
 ## Releases
 
