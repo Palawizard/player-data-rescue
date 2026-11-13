@@ -30,13 +30,13 @@ It reads `pdrtest.properties` from the server folder on every call, one line per
 | Mode | Failure |
 |---|---|
 | `rename-item` | After each save, the item in inventory slot 17 is renamed to `pdrtest_removed:brass_ingot`, a mod that is not installed. |
-| `rename-effect` | After each save, every active effect is renamed to `pdrtest_removed:poison_cloud` (on 1.20.1, numeric id 250, and Forge's `forge:id`). |
+| `rename-effect` | After each save, every active effect is renamed to `pdrtest_removed:poison_cloud`. On 1.20.1, which stores effects by number, the numeric id becomes 250, and on Forge its `forge:id` gets the name. |
 | `rename-vehicle` | After each save, the vehicle's entity type is renamed to `pdrtest_removed:cart`. |
 | `truncate`, `truncate-both` | After each save, the player file (and with `truncate-both` its `.dat_old` copy) is cut in half. |
-| `attach` | On login, the player gets the test attachment `pdrtest:broken` (NeoForge only; on Forge and Fabric it is always saved). |
+| `attach` | On login, the player gets the test attachment `pdrtest:broken`. Only needed on NeoForge, where `unreadable-attachment` attaches it too; on Forge and Fabric it is always saved. |
 | `attachment-throws` | The test attachment's reader throws. |
 | `unreadable-attachment` | The test attachment is saved in a form its reader rejects, at every save. Without the mode the reader accepts both forms, like a fixed release. |
-| `throw-on-placement` | Placement throws, whatever the data. |
+| `throw-on-placement` | Placement throws at its end, whatever the data: from `PlayerLoggedInEvent` on Forge and NeoForge, and at the end of `PlayerList#placeNewPlayer` on Fabric, after the player was added to the player list. |
 
 The attachment is a Forge capability under `ForgeCaps`, a NeoForge data attachment under `neoforge:attachments`, and on Fabric (no Fabric API) a top-level key written and read by a mixin, the way component libraries store theirs. The renames run right after the game wrote the file: Forge's and NeoForge's `PlayerEvent.SaveToFile`, and on Fabric a mixin at the end of `PlayerDataStorage#save`. The game writes the real data first (the item, the effect and the minecart are given through RCON), so a renamed file is what a save looks like after its mod was removed. These files are produced during the smoke run and never committed.
 
@@ -46,7 +46,7 @@ The attachment is a Forge capability under `ForgeCaps`, a NeoForge data attachme
 
 ## Failure scenarios
 
-Unless `-SkipScenarios` is given, `prod-smoke.ps1` also installs the test mod and runs `scripts/smoke-scenarios.ps1` before stopping the server, so CI runs them for every band. Each scenario uses its own player. One or two first joins save real data and let the test mod break it, and the script checks the test mod's log line that proves it. The next join records the outcome: `invalid` (the client got the `multiplayer.disconnect.invalid_player_data` disconnect, and the log has `Couldn't place player in world`) or `joined`. The run fails when an outcome differs from the vanilla outcome on record below. Until the rescue code exists, this table is the behaviour of the game and its loader with no rescue.
+Unless `-SkipScenarios` is given, `prod-smoke.ps1` also installs the test mod and runs `scripts/smoke-scenarios.ps1` before stopping the server, so CI runs them for every band. Each scenario uses its own player. One or two first joins save real data and let the test mod break it, and the script checks the test mod's log line that proves it (for example `saved attachment pdrtest:broken of S2Bot as int`). Each later join must log the failure the scenario causes (`pdrtest: deliberate failure: ...`, which NeoForge also logs when it skips the attachment), and records the outcome: `invalid` (the client got the `multiplayer.disconnect.invalid_player_data` disconnect, and the log has `Couldn't place player in world`) or `joined`. The run fails when an outcome differs from the vanilla outcome on record below. Until the rescue code exists, this table is the behaviour of the game and its loader with no rescue.
 
 Observed on 2026-11-13 on every Tier A band (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3):
 

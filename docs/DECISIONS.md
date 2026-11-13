@@ -136,7 +136,7 @@ Consequences:
 
 Status: Accepted.
 
-The production-JAR smoke test joins real players through `testmod/join-bot/JoinBot.java`, a small protocol client written for this project. It runs with the JDK's single-file source launcher (`java JoinBot.java`), has no dependency and is never part of a mod JAR (`check-release-artifacts.ps1` refuses any test file in a release JAR). It logs in to an offline-mode server as a vanilla client, goes through the configuration phase where the version has one, answers keep-alives, pings, teleports and chunk batches, stays as long as asked, and reports how the join ended. Its packet ids and layouts come from each version's decompiled sources (1.20.1) and from the server's own `--reports` packet list (1.21.1, 26.3), one profile per protocol: 763 (1.20.1), 767 (1.21.1) and 777 (26.3). A new band adds a profile. The client is pinned by the repository itself: its version is the commit.
+The production-JAR smoke test joins real players through `testmod/join-bot/JoinBot.java`, a small protocol client written for this project. It runs with the JDK's single-file source launcher (`java JoinBot.java`), has no dependency and is never part of a mod JAR (`check-release-artifacts.ps1` refuses any test file in a release JAR). It logs in to an offline-mode server as a vanilla client, goes through the configuration phase where the version has one, answers keep-alives, pings, teleports and chunk batches, stays as long as asked, and reports how the join ended. Its packet layouts come from each version's decompiled sources, and its packet ids from the decompiled sources (1.20.1) or the server's own `--reports` packet list (1.21.1, 26.3), one profile per protocol: 763 (1.20.1), 767 (1.21.1) and 777 (26.3). A new band adds a profile. The client is pinned by the repository itself: its version is the commit.
 
 Checked on 2026-11-13: the client joined and stayed on the real dedicated server of all eight Tier A band and loader pairs (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3), with network compression on.
 
@@ -146,4 +146,4 @@ Options considered:
 - A real client run headless (HeadlessMC, mc-runtime-test): the most faithful, but it downloads and starts the full client and its assets for every band and loader, and mc-runtime-test listed versions up to 26.2.
 - A fake connection created inside the test mod: no network, but it calls the placement code directly and skips the login and configuration listeners where the vanilla catch lives.
 
-Why: only the in-house client covers every Tier A band today, and it exercises the real login path, including the `Couldn't place player in world` catch. The same client lets Chunk Pruner build fixture worlds that need a player nearby (`InhabitedTime` only grows near players), with its own copy.
+Why: only the in-house client covers every Tier A band today, and it exercises the real login path, including the `Couldn't place player in world` catch.
