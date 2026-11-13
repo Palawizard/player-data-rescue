@@ -41,64 +41,134 @@ public final class JoinBot {
         PLAY
     }
 
-    /** Packet ids of one protocol version. -1 means the packet does not exist in that version. */
+    /**
+     * Packet ids of one protocol version, by name: incoming ids, then outgoing ones ending in
+     * {@code Out}. A packet that does not exist in that version has no entry.
+     */
     private record Profile(
             String minecraft,
             int protocol,
             boolean configurationPhase,
             boolean helloHasOptionalUuid,
             boolean particleStatusInClientInfo,
-            int loginDisconnect,
-            int loginSuccess,
-            int loginCompression,
-            int loginCustomQuery,
-            int loginCookieRequest,
-            int loginAcknowledged,
-            int loginCustomQueryAnswer,
-            int loginCookieResponse,
-            int cfgCookieRequest,
-            int cfgDisconnect,
-            int cfgFinish,
-            int cfgKeepAlive,
-            int cfgPing,
-            int cfgSelectKnownPacks,
-            int cfgCodeOfConduct,
-            int cfgClientInformationOut,
-            int cfgCookieResponseOut,
-            int cfgFinishOut,
-            int cfgKeepAliveOut,
-            int cfgPongOut,
-            int cfgSelectKnownPacksOut,
-            int cfgAcceptCodeOfConductOut,
-            int playChunkBatchFinished,
-            int playDisconnect,
-            int playKeepAlive,
-            int playLogin,
-            int playPing,
-            int playPlayerPosition,
-            int playStartConfiguration,
-            int playAcceptTeleportationOut,
-            int playChunkBatchReceivedOut,
-            int playClientInformationOut,
-            int playConfigurationAcknowledgedOut,
-            int playKeepAliveOut,
-            int playPlayerLoadedOut,
-            int playPongOut,
-            boolean teleportIdFirst) {}
+            boolean teleportIdFirst,
+            Map<String, Integer> ids) {
+        int id(String packet) {
+            return ids.getOrDefault(packet, -1);
+        }
+    }
 
     // 1.20.1 (protocol 763): ids are the registration order in ConnectionProtocol.
     private static final Profile MC_1_20_1 = new Profile(
-            "1.20.1", 763, false, true, false, 0, 2, 3, 4, -1, -1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, 26, 35, 40, 50, 60, -1, 0, -1, 8, -1, 18, -1, 32, false);
+            "1.20.1",
+            763,
+            false,
+            true,
+            false,
+            false,
+            Map.ofEntries(
+                    Map.entry("loginDisconnect", 0),
+                    Map.entry("loginSuccess", 2),
+                    Map.entry("loginCompression", 3),
+                    Map.entry("loginCustomQuery", 4),
+                    Map.entry("loginCustomQueryAnswer", 2),
+                    Map.entry("playDisconnect", 26),
+                    Map.entry("playKeepAlive", 35),
+                    Map.entry("playLogin", 40),
+                    Map.entry("playPing", 50),
+                    Map.entry("playPlayerPosition", 60),
+                    Map.entry("playAcceptTeleportationOut", 0),
+                    Map.entry("playClientInformationOut", 8),
+                    Map.entry("playKeepAliveOut", 18),
+                    Map.entry("playPongOut", 32)));
 
     // 1.21.1 (protocol 767) and 26.3 (protocol 777): ids from the server's generated packets.json report.
     private static final Profile MC_1_21_1 = new Profile(
-            "1.21.1", 767, true, false, false, 0, 2, 3, 4, 5, 3, 2, 4, 0, 2, 3, 4, 5, 14, -1, 0, 1, 3, 4, 5, 7, -1, 12,
-            29, 38, 43, 53, 64, 105, 0, 8, 10, 12, 24, -1, 39, false);
+            "1.21.1",
+            767,
+            true,
+            false,
+            false,
+            false,
+            Map.ofEntries(
+                    Map.entry("loginDisconnect", 0),
+                    Map.entry("loginSuccess", 2),
+                    Map.entry("loginCompression", 3),
+                    Map.entry("loginCustomQuery", 4),
+                    Map.entry("loginCookieRequest", 5),
+                    Map.entry("loginAcknowledged", 3),
+                    Map.entry("loginCustomQueryAnswer", 2),
+                    Map.entry("loginCookieResponse", 4),
+                    Map.entry("cfgCookieRequest", 0),
+                    Map.entry("cfgDisconnect", 2),
+                    Map.entry("cfgFinish", 3),
+                    Map.entry("cfgKeepAlive", 4),
+                    Map.entry("cfgPing", 5),
+                    Map.entry("cfgSelectKnownPacks", 14),
+                    Map.entry("cfgClientInformationOut", 0),
+                    Map.entry("cfgCookieResponseOut", 1),
+                    Map.entry("cfgFinishOut", 3),
+                    Map.entry("cfgKeepAliveOut", 4),
+                    Map.entry("cfgPongOut", 5),
+                    Map.entry("cfgSelectKnownPacksOut", 7),
+                    Map.entry("playChunkBatchFinished", 12),
+                    Map.entry("playDisconnect", 29),
+                    Map.entry("playKeepAlive", 38),
+                    Map.entry("playLogin", 43),
+                    Map.entry("playPing", 53),
+                    Map.entry("playPlayerPosition", 64),
+                    Map.entry("playStartConfiguration", 105),
+                    Map.entry("playAcceptTeleportationOut", 0),
+                    Map.entry("playChunkBatchReceivedOut", 8),
+                    Map.entry("playClientInformationOut", 10),
+                    Map.entry("playConfigurationAcknowledgedOut", 12),
+                    Map.entry("playKeepAliveOut", 24),
+                    Map.entry("playPongOut", 39)));
 
     private static final Profile MC_26_3 = new Profile(
-            "26.3", 777, true, false, true, 0, 2, 3, 4, 5, 3, 2, 4, 0, 2, 3, 4, 5, 15, 20, 0, 1, 3, 4, 5, 7, 9, 11, 32,
-            45, 50, 62, 73, 120, 0, 11, 14, 16, 28, 44, 45, true);
+            "26.3",
+            777,
+            true,
+            false,
+            true,
+            true,
+            Map.ofEntries(
+                    Map.entry("loginDisconnect", 0),
+                    Map.entry("loginSuccess", 2),
+                    Map.entry("loginCompression", 3),
+                    Map.entry("loginCustomQuery", 4),
+                    Map.entry("loginCookieRequest", 5),
+                    Map.entry("loginAcknowledged", 3),
+                    Map.entry("loginCustomQueryAnswer", 2),
+                    Map.entry("loginCookieResponse", 4),
+                    Map.entry("cfgCookieRequest", 0),
+                    Map.entry("cfgDisconnect", 2),
+                    Map.entry("cfgFinish", 3),
+                    Map.entry("cfgKeepAlive", 4),
+                    Map.entry("cfgPing", 5),
+                    Map.entry("cfgSelectKnownPacks", 15),
+                    Map.entry("cfgCodeOfConduct", 20),
+                    Map.entry("cfgClientInformationOut", 0),
+                    Map.entry("cfgCookieResponseOut", 1),
+                    Map.entry("cfgFinishOut", 3),
+                    Map.entry("cfgKeepAliveOut", 4),
+                    Map.entry("cfgPongOut", 5),
+                    Map.entry("cfgSelectKnownPacksOut", 7),
+                    Map.entry("cfgAcceptCodeOfConductOut", 9),
+                    Map.entry("playChunkBatchFinished", 11),
+                    Map.entry("playDisconnect", 32),
+                    Map.entry("playKeepAlive", 45),
+                    Map.entry("playLogin", 50),
+                    Map.entry("playPing", 62),
+                    Map.entry("playPlayerPosition", 73),
+                    Map.entry("playStartConfiguration", 120),
+                    Map.entry("playAcceptTeleportationOut", 0),
+                    Map.entry("playChunkBatchReceivedOut", 11),
+                    Map.entry("playClientInformationOut", 14),
+                    Map.entry("playConfigurationAcknowledgedOut", 16),
+                    Map.entry("playKeepAliveOut", 28),
+                    Map.entry("playPlayerLoadedOut", 44),
+                    Map.entry("playPongOut", 45)));
 
     private static final List<Profile> PROFILES = List.of(MC_1_20_1, MC_1_21_1, MC_26_3);
 
@@ -170,7 +240,6 @@ public final class JoinBot {
         long leaveAt = Long.MAX_VALUE;
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), 10_000);
-            socket.setSoTimeout(1000);
             in = new DataInputStream(socket.getInputStream());
             out = socket.getOutputStream();
             sendHandshakeAndHello();
@@ -184,12 +253,21 @@ public final class JoinBot {
                     log("timeout: not joined after " + timeoutSeconds + " s (phase " + phase + ")");
                     return EXIT_ERROR;
                 }
-                byte[] packet;
+                // Only the wait for a new packet times out quickly, so the loop can check its clocks.
+                // Once a packet has started, a timeout is an error: skipping part of it would
+                // desynchronise the stream.
+                int first;
+                socket.setSoTimeout(1000);
                 try {
-                    packet = readPacket();
+                    first = in.read();
                 } catch (SocketTimeoutException e) {
                     continue;
                 }
+                if (first < 0) {
+                    throw new EOFException();
+                }
+                socket.setSoTimeout(30_000);
+                byte[] packet = readPacket(first);
                 Integer result = handle(new DataInputStream(new ByteArrayInputStream(packet)));
                 if (result != null) {
                     return result;
@@ -236,25 +314,27 @@ public final class JoinBot {
     }
 
     private Integer handleLogin(int id, DataInputStream packet) throws IOException {
-        if (id == profile.loginDisconnect()) {
+        if (id == profile.id("loginDisconnect")) {
             return disconnected(readString(packet));
-        } else if (id == profile.loginCompression()) {
+        } else if (id == profile.id("loginCompression")) {
             compressionThreshold = readVarInt(packet);
             log("compression threshold " + compressionThreshold);
-        } else if (id == profile.loginCustomQuery()) {
+        } else if (id == profile.id("loginCustomQuery")) {
             int transaction = readVarInt(packet);
             log("login query " + readString(packet) + " answered as not understood");
-            send(new Buf(profile.loginCustomQueryAnswer()).varInt(transaction).bool(false));
-        } else if (id == profile.loginCookieRequest()) {
-            send(new Buf(profile.loginCookieResponse())
+            send(new Buf(profile.id("loginCustomQueryAnswer"))
+                    .varInt(transaction)
+                    .bool(false));
+        } else if (id == profile.id("loginCookieRequest")) {
+            send(new Buf(profile.id("loginCookieResponse"))
                     .string(readString(packet))
                     .bool(false));
-        } else if (id == profile.loginSuccess()) {
+        } else if (id == profile.id("loginSuccess")) {
             log("login accepted");
             if (profile.configurationPhase()) {
-                send(new Buf(profile.loginAcknowledged()));
+                send(new Buf(profile.id("loginAcknowledged")));
                 phase = Phase.CONFIGURATION;
-                send(clientInformation(profile.cfgClientInformationOut()));
+                send(clientInformation(profile.id("cfgClientInformationOut")));
             } else {
                 phase = Phase.PLAY;
             }
@@ -265,47 +345,47 @@ public final class JoinBot {
     }
 
     private Integer handleConfiguration(int id, DataInputStream packet) throws IOException {
-        if (id == profile.cfgDisconnect()) {
+        if (id == profile.id("cfgDisconnect")) {
             return disconnected(readComponent(packet));
-        } else if (id == profile.cfgKeepAlive()) {
-            send(new Buf(profile.cfgKeepAliveOut()).i64(packet.readLong()));
-        } else if (id == profile.cfgPing()) {
-            send(new Buf(profile.cfgPongOut()).i32(packet.readInt()));
-        } else if (id == profile.cfgSelectKnownPacks()) {
-            send(new Buf(profile.cfgSelectKnownPacksOut()).varInt(0));
-        } else if (id == profile.cfgCodeOfConduct()) {
-            send(new Buf(profile.cfgAcceptCodeOfConductOut()));
-        } else if (id == profile.cfgCookieRequest()) {
-            send(new Buf(profile.cfgCookieResponseOut())
+        } else if (id == profile.id("cfgKeepAlive")) {
+            send(new Buf(profile.id("cfgKeepAliveOut")).i64(packet.readLong()));
+        } else if (id == profile.id("cfgPing")) {
+            send(new Buf(profile.id("cfgPongOut")).i32(packet.readInt()));
+        } else if (id == profile.id("cfgSelectKnownPacks")) {
+            send(new Buf(profile.id("cfgSelectKnownPacksOut")).varInt(0));
+        } else if (id == profile.id("cfgCodeOfConduct")) {
+            send(new Buf(profile.id("cfgAcceptCodeOfConductOut")));
+        } else if (id == profile.id("cfgCookieRequest")) {
+            send(new Buf(profile.id("cfgCookieResponseOut"))
                     .string(readString(packet))
                     .bool(false));
-        } else if (id == profile.cfgFinish()) {
+        } else if (id == profile.id("cfgFinish")) {
             log("configuration finished");
-            send(new Buf(profile.cfgFinishOut()));
+            send(new Buf(profile.id("cfgFinishOut")));
             phase = Phase.PLAY;
         }
         return null;
     }
 
     private Integer handlePlay(int id, DataInputStream packet) throws IOException {
-        if (id == profile.playDisconnect()) {
+        if (id == profile.id("playDisconnect")) {
             return disconnected(profile.configurationPhase() ? readComponent(packet) : readString(packet));
-        } else if (id == profile.playKeepAlive()) {
-            send(new Buf(profile.playKeepAliveOut()).i64(packet.readLong()));
-        } else if (id == profile.playPing()) {
-            send(new Buf(profile.playPongOut()).i32(packet.readInt()));
-        } else if (id == profile.playLogin()) {
+        } else if (id == profile.id("playKeepAlive")) {
+            send(new Buf(profile.id("playKeepAliveOut")).i64(packet.readLong()));
+        } else if (id == profile.id("playPing")) {
+            send(new Buf(profile.id("playPongOut")).i32(packet.readInt()));
+        } else if (id == profile.id("playLogin")) {
             joined = true;
             log("joined the world");
             if (!profile.configurationPhase()) {
-                send(clientInformation(profile.playClientInformationOut()));
+                send(clientInformation(profile.id("playClientInformationOut")));
             }
-        } else if (id == profile.playPlayerPosition()) {
+        } else if (id == profile.id("playPlayerPosition")) {
             acceptTeleport(packet);
-        } else if (id == profile.playChunkBatchFinished()) {
-            send(new Buf(profile.playChunkBatchReceivedOut()).f32(64.0f));
-        } else if (id == profile.playStartConfiguration()) {
-            send(new Buf(profile.playConfigurationAcknowledgedOut()));
+        } else if (id == profile.id("playChunkBatchFinished")) {
+            send(new Buf(profile.id("playChunkBatchReceivedOut")).f32(64.0f));
+        } else if (id == profile.id("playStartConfiguration")) {
+            send(new Buf(profile.id("playConfigurationAcknowledgedOut")));
             phase = Phase.CONFIGURATION;
         }
         return null;
@@ -345,14 +425,14 @@ public final class JoinBot {
         z = (relatives & 4) != 0 ? z + nz : nz;
         yRot = (relatives & 8) != 0 ? yRot + nyRot : nyRot;
         xRot = (relatives & 16) != 0 ? xRot + nxRot : nxRot;
-        Buf accept = new Buf(profile.playAcceptTeleportationOut()).varInt(teleportId);
+        Buf accept = new Buf(profile.id("playAcceptTeleportationOut")).varInt(teleportId);
         if (profile.teleportIdFirst()) {
             accept.f64(x).f64(y).f64(z).f32(yRot).f32(xRot);
         }
         send(accept);
         log(String.format(java.util.Locale.ROOT, "at %.1f %.1f %.1f", x, y, z));
-        if (profile.playPlayerLoadedOut() >= 0 && joined && !loadedSent) {
-            send(new Buf(profile.playPlayerLoadedOut()));
+        if (profile.id("playPlayerLoadedOut") >= 0 && joined && !loadedSent) {
+            send(new Buf(profile.id("playPlayerLoadedOut")));
             loadedSent = true;
         }
     }
@@ -405,8 +485,8 @@ public final class JoinBot {
         out.flush();
     }
 
-    private byte[] readPacket() throws IOException, DataFormatException {
-        int length = readVarInt(in);
+    private byte[] readPacket(int firstByte) throws IOException, DataFormatException {
+        int length = readVarInt(in, firstByte);
         if (length < 0 || length > MAX_PACKET) {
             throw new IOException("bad packet length " + length);
         }
@@ -436,6 +516,9 @@ public final class JoinBot {
             done += read;
         }
         inflater.end();
+        if (done < dataLength) {
+            throw new IOException("compressed packet ended after " + done + " of " + dataLength + " bytes");
+        }
         return data;
     }
 
@@ -506,11 +589,22 @@ public final class JoinBot {
     }
 
     private static int readVarInt(InputStream input) throws IOException {
+        int first = input.read();
+        if (first < 0) {
+            throw new EOFException();
+        }
+        return readVarInt(input, first);
+    }
+
+    private static int readVarInt(InputStream input, int firstByte) throws IOException {
         int value = 0;
+        int b = firstByte;
         for (int shift = 0; shift < 35; shift += 7) {
-            int b = input.read();
-            if (b < 0) {
-                throw new EOFException();
+            if (shift > 0) {
+                b = input.read();
+                if (b < 0) {
+                    throw new EOFException();
+                }
             }
             value |= (b & 0x7f) << shift;
             if ((b & 0x80) == 0) {
