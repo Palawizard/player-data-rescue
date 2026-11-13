@@ -37,7 +37,15 @@ Tier A must ship in the first release (`0.1.0`): Forge 1.20.1, Fabric 1.20.1, al
 
 ## Toolchains
 
-Gradle runs on Java 21, and each band compiles through a Java toolchain (17, 21 or 25). Gradle 8.12 cannot run on Java 25, so the newest bands pin their own Gradle wrapper (9.x).
+Each band pins its own Gradle wrapper and compiles through a Java toolchain (17, 21 or 25). The Java version Gradle itself runs on is set per project by `gradleJava` in `versions/version-matrix.json` (ADR-009):
+
+| Projects | Gradle | Gradle runs on |
+|---|---|---|
+| ForgeGradle 6 bands (Forge 1.20.1 and 1.21.1) | 8.14 | Java 21 (Gradle 8.14 supports Java 24 at most) |
+| Every other band | 9.x | Java 25 (required by Fabric Loom 1.18 and later, and by Fabric from Minecraft 26.1) |
+| `core/` | 9.x | Java 21 |
+
+The Fabric bands use Loom 1.19.
 
 ## Mappings
 

@@ -8,9 +8,13 @@ Status: Accepted.
 
 The project reuses the layout of Pala's Item Clear: one standalone Gradle project per band and loader under `versions/`, a `versions/version-matrix.json` file shared by the build, smoke and release tooling, and per-band Gradle wrappers. Unlike Pala's Item Clear, the 1.20.1 band is also a set of standalone projects instead of an Architectury Loom root.
 
-The shared logic lives in a single pure-Java core that every band includes. How the bands include it (a source directory or a subproject) is settled in M0 and recorded here. Shared logic is never copied into a band.
+The shared logic lives in a single pure-Java core that every band includes. Shared logic is never copied into a band.
+
+How the bands include the core (settled in M0): `core/` is a standalone Gradle project with its own wrapper, where the JUnit tests and the formatting check run on Java 17. Each band adds `core/src/main/java` as a second source directory of its `main` source set, through `versions/shared/band.gradle`, and compiles it with the band's own Java release. The core classes end up in the band's JAR next to the loader code. `mod_version` and the other mod properties are read from the root `gradle.properties` by the core and by every band.
 
 Why: the layout already ships 21 artifacts for Pala's Item Clear, with working smoke and release tooling, and avoiding Architectury keeps the runtime dependency list empty (ADR-003).
+
+Why a source directory and not a subproject or a core JAR: the bands are separate Gradle builds on different Gradle versions (8.14 for ForgeGradle 6, 9.x for the others), so a shared subproject would need a composite build across those versions. A source directory couples nothing at build time. It also avoids jar-in-jar, shading and package relocation: each JAR holds one copy of the core, compiled for the band's Java version, and nothing else to load. The core's own build enforces this: it compiles with `--release 17` and has no Minecraft or loader class on its classpath, so a Minecraft import in the core fails there before any band builds.
 
 ## ADR-002: Pure core, thin loader code
 
@@ -89,3 +93,23 @@ Status: Accepted.
 When placement fails even with the minimal profile, the mod restores the vanilla outcome and writes a diagnosis report. A key that keeps failing becomes one recurring issue instead of a new incident at every login.
 
 Why: on 26.3 and 1.21.11, reported cases include errors that remain after deleting both player files, or that appear on a brand new world. No saved data can fix those. Retrying would loop, and a new incident at every login would bury the useful report.
+
+## ADR-009: Gradle JVM per project
+
+Status: Accepted.
+
+Each project in `versions/version-matrix.json` (every band and loader, and the core) has a `gradleJava` field: the Java version Gradle itself runs on. It is separate from `java`, the release the band compiles for. The build scripts and the CI set `JAVA_HOME` to that version before calling the project's wrapper, and the scripts refuse a Gradle 8.x project with a `gradleJava` above 24.
+
+Current values: 21 for the ForgeGradle 6 bands (Forge 1.20.1 and 1.21.1, on Gradle 8.14), 21 for the core, and 25 for every other band (Gradle 9.x).
+
+Why: running every project on one Java version does not work. Gradle 8.14 runs on Java 24 at most, and ForgeGradle 6 needs Gradle 8.x. Fabric Loom 1.18 and later declare that Gradle must run on Java 25, and from Minecraft 26.1 Fabric requires Java 25 for the Gradle JVM. A single Java 21 runtime would have kept the Fabric bands on Loom 1.17 and blocked any Minecraft version that needs a newer Loom.
+
+## ADR-010: Declared Minecraft range
+
+Status: Accepted.
+
+Each band records two ranges in `versions/version-matrix.json`. `bandRange` is every Minecraft patch the band is meant to cover. `declaredRange` is what the band's metadata (`fabric.mod.json`, `mods.toml`, `neoforge.mods.toml`) actually accepts, through `minecraft_version_range` in the band's `gradle.properties`. `declaredRange` starts at the compile target and grows toward `bandRange` one patch at a time, as each patch passes the production-JAR smoke test on every loader of the band. `scripts/build-all-version-bands.ps1` fails when a band's `gradle.properties` and the matrix disagree.
+
+Consequence: until the other patches are smoke tested, a release only installs on the compile target of each band (1.20.1, 1.21.1 and 26.3 for the Tier A bands).
+
+Why: a loader refuses a JAR outside its declared range, which is a clear message for the player. Declaring an untested patch instead risks a crash or, worse for this mod, a silent failure on a version it was never run on.

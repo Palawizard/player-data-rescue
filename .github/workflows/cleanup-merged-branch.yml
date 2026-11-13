@@ -1,0 +1,33 @@
+name: Delete merged branch
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-branch:
+    name: Delete the head branch
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'main' &&
+      github.event.pull_request.head.ref != 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the branch unless it is already gone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if output=$(gh api --method DELETE "repos/$REPOSITORY/git/refs/heads/$BRANCH" 2>&1); then
+            echo "Deleted $BRANCH."
+          elif grep -q 'Reference does not exist' <<<"$output"; then
+            echo "$BRANCH was already deleted."
+          else
+            echo "$output"
+            exit 1
+          fi

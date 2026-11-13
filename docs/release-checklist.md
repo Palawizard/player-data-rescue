@@ -6,7 +6,7 @@ Releases follow the same flow as Pala's Item Clear: the version lives in the rep
 
 1. On `dev`, move the `CHANGELOG.md` entries from `Unreleased` to the new version.
 2. Write `.github/release-notes/v<version>.md`.
-3. Bump `mod_version` in the root `gradle.properties` and in every band.
+3. Bump `mod_version` in the root `gradle.properties`. The core and every band read it from there.
 4. Run the full checks: build of every band, unit tests, `check-release-artifacts`, and the production-JAR smoke test on every band and loader (`prod-smoke-all`).
 5. Open a pull request from `dev` to `main` so CI runs on the exact commit to release.
 

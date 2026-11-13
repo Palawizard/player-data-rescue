@@ -1,0 +1,45 @@
+{
+  "policy": "Each band compiles against the newest Minecraft patch in its range. A band's metadata only declares the patches that passed the production-JAR smoke test, so declaredRange starts at the compile target and grows toward bandRange as patches are smoke tested. Loader versions live in each band's gradle.properties.",
+  "gradleJavaPolicy": "gradleJava is the Java version Gradle itself runs on for each project, as opposed to java, the release the band compiles for. Gradle 8.14 (the ForgeGradle 6 bands) runs on Java 24 at most, so those bands use 21. Every other project uses Gradle 9.x on Java 25, which Fabric Loom 1.18 and later require.",
+  "core": { "path": "core", "gradleJava": 21 },
+  "bands": [
+    {
+      "id": "1.20-1.20.1",
+      "tier": "A",
+      "compileTarget": "1.20.1",
+      "bandRange": "[1.20,1.20.1]",
+      "declaredRange": "[1.20.1]",
+      "java": 17,
+      "loaders": {
+        "forge": { "path": "versions/1.20.1-forge", "artifact": "player-data-rescue-1.20.1-forge", "gradleJava": 21 },
+        "fabric": { "path": "versions/1.20.1-fabric", "artifact": "player-data-rescue-1.20.1-fabric", "gradleJava": 25 }
+      }
+    },
+    {
+      "id": "1.21-1.21.4",
+      "tier": "A",
+      "compileTarget": "1.21.1",
+      "bandRange": "[1.21,1.21.5)",
+      "declaredRange": "[1.21.1]",
+      "java": 21,
+      "loaders": {
+        "neoforge": { "path": "versions/1.21.1-neoforge", "artifact": "player-data-rescue-1.21.1-neoforge", "gradleJava": 25 },
+        "fabric": { "path": "versions/1.21.1-fabric", "artifact": "player-data-rescue-1.21.1-fabric", "gradleJava": 25 },
+        "forge": { "path": "versions/1.21.1-forge", "artifact": "player-data-rescue-1.21.1-forge", "gradleJava": 21 }
+      }
+    },
+    {
+      "id": "26.3",
+      "tier": "A",
+      "compileTarget": "26.3",
+      "bandRange": "[26.3]",
+      "declaredRange": "[26.3]",
+      "java": 25,
+      "loaders": {
+        "neoforge": { "path": "versions/26.3-neoforge", "artifact": "player-data-rescue-26.3-neoforge", "gradleJava": 25 },
+        "fabric": { "path": "versions/26.3-fabric", "artifact": "player-data-rescue-26.3-fabric", "gradleJava": 25 },
+        "forge": { "path": "versions/26.3-forge", "artifact": "player-data-rescue-26.3-forge", "gradleJava": 25 }
+      }
+    }
+  ]
+}

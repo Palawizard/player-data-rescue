@@ -1,0 +1,20 @@
+plugins {
+    id 'java-library'
+    id 'net.minecraftforge.gradle' version '6.0.54'
+    id 'com.diffplug.spotless' version '8.11.0'
+}
+
+apply from: '../shared/band.gradle'
+
+minecraft {
+    mappings channel: 'official', version: project.minecraft_version
+}
+
+repositories {
+    maven { url = 'https://maven.minecraftforge.net/' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+}
