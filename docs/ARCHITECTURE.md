@@ -12,7 +12,7 @@ versions/    One standalone project per band and loader. Each one holds the hook
              and the loader adapter (entrypoint, attachment bridge, mod lookup).
 testmod/     Dev-only mod that produces the failures the scenarios need, and the headless
              join client of the smoke test (join-bot/). Never published. Each band builds
-             its own test mod JAR from common/, common-<minecraft>/ and <band>-<loader>/.
+             its own test mod JAR from common/, common-<minecraft>/ and <minecraft>-<loader>/.
 scripts/     Build of every band, production-JAR smoke test, release artifact checks.
 ```
 
@@ -60,7 +60,7 @@ Loader events around the read: Forge and NeoForge fire their player loading even
 
 ### What vanilla does with data from a removed mod
 
-Checked in the sources and reproduced by the smoke test (`docs/TESTING.md`):
+Checked in the sources. The smoke test checks that the player joins in each case (`docs/TESTING.md`):
 
 | Unit | 1.20.1 | 1.21.1 | 26.3 |
 |---|---|---|---|
