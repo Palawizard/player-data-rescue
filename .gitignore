@@ -6,7 +6,6 @@ build/
 # Loader toolchains and dev runs
 run/
 runs/
-.architectury-transformer/
 
 # IDEs
 .idea/

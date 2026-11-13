@@ -103,3 +103,13 @@ Each project in `versions/version-matrix.json` (every band and loader, and the c
 Current values: 21 for the ForgeGradle 6 bands (Forge 1.20.1 and 1.21.1, on Gradle 8.14), 21 for the core, and 25 for every other band (Gradle 9.x).
 
 Why: running every project on one Java version does not work. Gradle 8.14 runs on Java 24 at most, and ForgeGradle 6 needs Gradle 8.x. Fabric Loom 1.18 and later declare that Gradle must run on Java 25, and from Minecraft 26.1 Fabric requires Java 25 for the Gradle JVM. A single Java 21 runtime would have kept the Fabric bands on Loom 1.17 and blocked any Minecraft version that needs a newer Loom.
+
+## ADR-010: Declared Minecraft range
+
+Status: Accepted.
+
+Each band records two ranges in `versions/version-matrix.json`. `bandRange` is every Minecraft patch the band is meant to cover. `declaredRange` is what the band's metadata (`fabric.mod.json`, `mods.toml`, `neoforge.mods.toml`) actually accepts, through `minecraft_version_range` in the band's `gradle.properties`. `declaredRange` starts at the compile target and grows toward `bandRange` one patch at a time, as each patch passes the production-JAR smoke test on every loader of the band. `scripts/build-all-version-bands.ps1` fails when a band's `gradle.properties` and the matrix disagree.
+
+Consequence: until the other patches are smoke tested, a release only installs on the compile target of each band (1.20.1, 1.21.1 and 26.3 for the Tier A bands).
+
+Why: a loader refuses a JAR outside its declared range, which is a clear message for the player. Declaring an untested patch instead risks a crash or, worse for this mod, a silent failure on a version it was never run on.
