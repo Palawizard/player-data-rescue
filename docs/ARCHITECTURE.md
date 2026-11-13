@@ -119,8 +119,11 @@ Storage, checked in M1 (see "Mod data on the player" above): Forge capabilities 
 - The mod only runs the game's own decoders on quarantined data, never anything else.
 - A single entry's payload is capped at 2 MiB. Larger units are recorded as "too large" and kept in `original/` only.
 
+## Answered questions
+
+- Retrying the load on the same `ServerPlayer` is not safe: a partial load adds to effects (1.20.1 and 1.21.1), attribute modifiers, the recipe book, NeoForge attachments and Forge capabilities instead of replacing them. Each attempt builds a new `ServerPlayer` (ADR-PDR-005).
+- The smoke test joins real players through a headless client in `testmod/join-bot/` (ADR-PDR-006, [TESTING.md](TESTING.md)).
+
 ## Open questions
 
-- Is it safe to retry the load on the same `ServerPlayer` instance? A partial first load may leave attachments half set. If not, each retry builds a fresh `ServerPlayer` the way the login flow does. To answer in M1 on all three loaders, then record an ADR.
-- How does the smoke test drive a real player join headlessly? Options include a dev-only test mod that triggers the load and placement path with a fake connection, or a protocol bot. To settle in M1 and record in [TESTING.md](TESTING.md).
 - The rescue flow starts on a failure (T1, T3), but vanilla never fails on S1, S3 and S4: an item, an effect or a vehicle from a removed mod is dropped without an exception on every Tier A band, and NeoForge skips an attachment whose reader throws. Catching the placement failure alone cannot rescue those units. To decide before M2: detect them before vanilla drops them (a check of the known-decoder units on every join), or change those scenarios.
