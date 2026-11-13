@@ -10,9 +10,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/** Same moment as the PlayerLoggedInEvent of Forge and NeoForge: the end of placement. */
 @Mixin(PlayerList.class)
 abstract class PlayerListMixin {
-    @Inject(method = "placeNewPlayer", at = @At("HEAD"))
+    @Inject(method = "placeNewPlayer", at = @At("TAIL"))
     private void pdrtest$throwOnPlacement(
             Connection connection, ServerPlayer player, CommonListenerCookie cookie, CallbackInfo ci) {
         String name = player.getGameProfile().name();

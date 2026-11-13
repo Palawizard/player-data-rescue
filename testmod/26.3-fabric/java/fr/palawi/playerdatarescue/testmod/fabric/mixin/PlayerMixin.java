@@ -4,6 +4,8 @@ import fr.palawi.playerdatarescue.testmod.TestModes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -16,9 +18,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(Player.class)
 abstract class PlayerMixin {
+    private static final Logger PDRTEST_LOGGER = LoggerFactory.getLogger("pdrtest");
+
     @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
     private void pdrtest$write(ValueOutput output, CallbackInfo ci) {
-        if (TestModes.has(pdrtest$name(), TestModes.UNREADABLE_ATTACHMENT)) {
+        boolean unreadable = TestModes.has(pdrtest$name(), TestModes.UNREADABLE_ATTACHMENT);
+        PDRTEST_LOGGER.info(
+                "{}saved attachment {} of {} as {}",
+                TestModes.LOG_PREFIX,
+                TestModes.ATTACHMENT_ID,
+                pdrtest$name(),
+                unreadable ? "unreadable" : "int");
+        if (unreadable) {
             output.putString(TestModes.ATTACHMENT_ID, "unreadable");
         } else {
             output.putInt(TestModes.ATTACHMENT_ID, 42);
