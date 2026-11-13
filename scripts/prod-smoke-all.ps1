@@ -10,7 +10,7 @@ param(
 # Runs the production-JAR smoke test for every band and loader in the version matrix.
 # Server installs are cached under build/prod-smoke. Passing combinations are recorded
 # in results.json with the JAR hash, so an interrupted run resumes instead of
-# restarting, and a rebuilt JAR is always tested again.
+# restarting, and a rebuilt JAR, test mod or scenario change is always tested again.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -35,10 +35,21 @@ function Add-Result {
 }
 
 function Get-JarHash {
-    param([object]$LoaderConfig)
-    $jar = Join-Path (Get-BandDirectory $LoaderConfig) "build/libs/$($LoaderConfig.artifact)-$modVersion.jar"
-    if (Test-Path -LiteralPath $jar) { return (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash }
-    return $null
+    # The release JAR, the test mod JAR and the scenario script together decide the result.
+    param([object]$LoaderConfig, [object]$Band, [string]$LoaderName)
+    $bandDir = Get-BandDirectory $LoaderConfig
+    $files = @(
+        (Join-Path $bandDir "build/libs/$($LoaderConfig.artifact)-$modVersion.jar")
+        (Join-Path $bandDir "build/testmod/pdrtest-$($Band.compileTarget)-$LoaderName.jar")
+        (Join-Path $PSScriptRoot 'smoke-scenarios.ps1')
+        (Join-Path $ProjectRoot 'testmod/join-bot/JoinBot.java')
+    )
+    $hashes = @()
+    foreach ($file in $files) {
+        if (-not (Test-Path -LiteralPath $file)) { return $null }
+        $hashes += (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+    }
+    return ($hashes -join '-')
 }
 
 foreach ($band in (Get-VersionMatrix).bands) {
@@ -49,7 +60,7 @@ foreach ($band in (Get-VersionMatrix).bands) {
         $key = "$($band.id)/$loaderName"
 
         if ($SkipBuild -and -not $Fresh) {
-            $hash = Get-JarHash $loader
+            $hash = Get-JarHash -LoaderConfig $loader -Band $band -LoaderName $loaderName
             if ($hash -and $prior[$key] -eq $hash) {
                 Add-Result -Band $band.id -Loader $loaderName -Status 'PASS' -Detail 'same JAR passed in a previous run' -JarHash $hash
                 continue
@@ -61,7 +72,7 @@ foreach ($band in (Get-VersionMatrix).bands) {
         if ($Fresh) { $smokeArgs.Fresh = $true }
         try {
             & $bandScript @smokeArgs
-            Add-Result -Band $band.id -Loader $loaderName -Status 'PASS' -Detail 'real dedicated server' -JarHash (Get-JarHash $loader)
+            Add-Result -Band $band.id -Loader $loaderName -Status 'PASS' -Detail 'real dedicated server' -JarHash (Get-JarHash -LoaderConfig $loader -Band $band -LoaderName $loaderName)
         } catch {
             Add-Result -Band $band.id -Loader $loaderName -Status 'FAIL' -Detail $_.Exception.Message
         }

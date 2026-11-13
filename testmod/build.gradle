@@ -1,0 +1,17 @@
+plugins {
+    id 'com.diffplug.spotless' version '8.11.0'
+}
+
+repositories {
+    mavenCentral()
+}
+
+spotless {
+    java {
+        target '**/java/**/*.java', 'join-bot/*.java'
+        palantirJavaFormat('2.103.0')
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}

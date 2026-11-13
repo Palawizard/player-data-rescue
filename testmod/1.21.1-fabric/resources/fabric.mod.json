@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "pdrtest",
+  "version": "0.0.0",
+  "name": "Player Data Rescue test mod (dev only)",
+  "description": "Dev-only failures for the Player Data Rescue smoke tests. Never published.",
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["fr.palawi.playerdatarescue.testmod.fabric.PdrTestFabric"]
+  },
+  "mixins": ["pdrtest.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.15.0"
+  }
+}

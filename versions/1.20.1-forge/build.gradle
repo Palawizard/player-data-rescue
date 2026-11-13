@@ -4,6 +4,8 @@ plugins {
     id 'com.diffplug.spotless' version '8.11.0'
 }
 
+// The test mod JAR is reobfuscated like the release JAR (see versions/shared/band.gradle).
+ext.testmodRemapped = true
 apply from: '../shared/band.gradle'
 
 minecraft {
@@ -18,3 +20,14 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
 }
+
+reobf {
+    testmodJar {}
+}
+
+tasks.named('testmodJar') {
+    destinationDirectory = layout.buildDirectory.dir('testmod')
+    finalizedBy 'reobfTestmodJar'
+}
+
+tasks.named('build') { dependsOn 'testmodJar' }

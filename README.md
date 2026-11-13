@@ -12,7 +12,7 @@ In development. There is no release yet.
 
 ## What it does
 
-After a mod is updated, removed or rolled back, a player's save can reference an item, an effect or mod data that no longer loads. Minecraft then refuses the connection with "Invalid player data", and the usual fix is to delete the player's file, which wipes their inventory and position.
+After a mod is updated, removed or rolled back, a player's save can hold mod data that throws while it loads, for example a Forge capability or a Fabric mod's own key. A save can also be truncated after a crash. Minecraft then refuses the connection with "Invalid player data", or starts the player from scratch, and the usual fix is to delete the player's file, which wipes their inventory and position.
 
 With Player Data Rescue installed, the server backs up the player's file first, loads every part that still works, sets the broken parts aside, and lets the player in. Admins get a report that lists what was set aside and the mods that most likely caused it. A command restores the set-aside parts later, for example once the missing mod is back.
 

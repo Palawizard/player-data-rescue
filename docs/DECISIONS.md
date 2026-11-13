@@ -113,3 +113,37 @@ Each band records two ranges in `versions/version-matrix.json`. `bandRange` is e
 Consequence: until the other patches are smoke tested, a release only installs on the compile target of each band (1.20.1, 1.21.1 and 26.3 for the Tier A bands).
 
 Why: a loader refuses a JAR outside its declared range, which is a clear message for the player. Declaring an untested patch instead risks a crash or, worse for this mod, a silent failure on a version it was never run on.
+
+## ADR-PDR-005: Each load attempt uses a new ServerPlayer
+
+Status: Accepted.
+
+A rescue never runs the load a second time on the `ServerPlayer` whose load failed. Each attempt (salvaged data, then the minimal profile) builds a new `ServerPlayer` the way the band's login flow does, and the failed instance is dropped before it is added to the player list or a level:
+
+- 1.20.1: `new ServerPlayer(MinecraftServer, ServerLevel, GameProfile)`. Not `PlayerList#getPlayerForLogin`, which also disconnects any online player with the same UUID.
+- 1.21.1: `new ServerPlayer(MinecraftServer, ServerLevel, GameProfile, ClientInformation)`, as `PlayerList#getPlayerForLogin` does.
+- 26.3: the same constructor, as `PrepareSpawnTask$Ready#spawn` does. The task stays in its ready state after a spawn, so the spawn level and position chosen in configuration are reused.
+
+Why: checked in M1 in the sources of every Tier A band and loader (ARCHITECTURE.md, Hook points). `Entity#load` sets fields one by one, so a load that throws part-way leaves a mixed state. Several parts add to what is already there instead of replacing it: active effects on 1.20.1 and 1.21.1, attribute modifiers, the recipe book, NeoForge attachments (added or replaced per key, never cleared) and Forge capabilities (changed in place). Loading the salvaged copy on top of that would keep parts of the data that was just set aside. A new instance also gets fresh Forge capabilities, because Forge attaches them in the `Entity` constructor.
+
+Consequences:
+
+- The read happens before the player joins the player list or a level on every band, so dropping the failed instance leaves nothing behind. Stats and advancements are cached per UUID in `PlayerList` and are shared by the new instance, which is what the login flow does too.
+- Construction events (`EntityConstructing` on Forge and NeoForge, `AttachCapabilitiesEvent` on Forge) fire once per attempt. Mods see one more construction, as when a player reconnects.
+- A failure inside `PlayerList#placeNewPlayer` (T3) can happen after the player was added to the player list. Cleaning up that case before the retry is not checked yet: M2 must cover it with the test mod's placement failure.
+
+## ADR-PDR-006: Headless player join in the smoke test
+
+Status: Accepted.
+
+The production-JAR smoke test joins real players through `testmod/join-bot/JoinBot.java`, a small protocol client written for this project. It runs with the JDK's single-file source launcher (`java JoinBot.java`), has no dependency and is never part of a mod JAR (`check-release-artifacts.ps1` refuses any test file in a release JAR). It logs in to an offline-mode server as a vanilla client, goes through the configuration phase where the version has one, answers keep-alives, pings, teleports and chunk batches, stays as long as asked, and reports how the join ended. Its packet layouts come from each version's decompiled sources, and its packet ids from the decompiled sources (1.20.1) or the server's own `--reports` packet list (1.21.1, 26.3), one profile per protocol: 763 (1.20.1), 767 (1.21.1) and 777 (26.3). A new band adds a profile. The client is pinned by the repository itself: its version is the commit.
+
+Checked on 2026-11-13: the client joined and stayed on the real dedicated server of all eight Tier A band and loader pairs (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3), with network compression on.
+
+Options considered:
+
+- mineflayer and node-minecraft-protocol (Node.js): their protocol data (`minecraft-data` 3.119.0 on npm, 2026-11-13) stops at 26.1, so they cannot join 26.3. They would also add Node.js and a package tree to the test setup.
+- A real client run headless (HeadlessMC, mc-runtime-test): the most faithful, but it downloads and starts the full client and its assets for every band and loader, and mc-runtime-test listed versions up to 26.2.
+- A fake connection created inside the test mod: no network, but it calls the placement code directly and skips the login and configuration listeners where the vanilla catch lives.
+
+Why: only the in-house client covers every Tier A band today, and it exercises the real login path, including the `Couldn't place player in world` catch.

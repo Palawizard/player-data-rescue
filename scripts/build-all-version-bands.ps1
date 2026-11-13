@@ -28,6 +28,14 @@ if (-not $SkipCore) {
     } catch {
         Add-Result -Band 'core' -Loader '-' -Status 'FAIL' -Detail $_.Exception.Message
     }
+    try {
+        # The test mod and the join bot are formatted by their own project, run with the core's wrapper.
+        Invoke-Gradle -ProjectDirectory (Join-Path $ProjectRoot $core.path) -GradleJava $core.gradleJava -Arguments @('-p', '../testmod', 'spotlessCheck')
+        & (Join-Path $PSScriptRoot 'check-powershell-compat.ps1')
+        Add-Result -Band 'testmod' -Loader '-' -Status 'PASS' -Detail 'test mod formatting, PowerShell 5.1 syntax'
+    } catch {
+        Add-Result -Band 'testmod' -Loader '-' -Status 'FAIL' -Detail $_.Exception.Message
+    }
 }
 
 foreach ($band in (Get-VersionMatrix).bands) {

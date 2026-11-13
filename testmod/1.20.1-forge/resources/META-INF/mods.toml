@@ -1,0 +1,12 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "MIT"
+
+[[mods]]
+modId = "pdrtest"
+version = "0.0.0"
+displayName = "Player Data Rescue test mod (dev only)"
+description = '''
+Dev-only failures for the Player Data Rescue smoke tests. Never published.
+'''
+displayTest = "IGNORE_ALL_VERSION"
