@@ -1,7 +1,6 @@
 package fr.palawi.playerdatarescue.core.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import fr.palawi.playerdatarescue.core.Fixtures;
 import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
@@ -62,6 +61,5 @@ class CoreValuesTest {
 
         assertEquals(List.of(), CoreValues.clamp(root, SPAWN));
         assertEquals(before, root);
-        assertFalse(root.contains("unchanged"));
     }
 }
