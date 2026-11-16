@@ -203,7 +203,7 @@ function Invoke-TeleportCheck {
     $player = 'TpBot'
     Set-PlayerModes -Player $player -Modes ''
     $offset = Get-LatestLogLength
-    $bot = Start-JoinBot -Player $player -StaySeconds 10
+    $bot = Start-JoinBot -Player $player -StaySeconds 25
     try {
         if (-not (Wait-ForLog -Offset $offset -Pattern "$player\[[^\]]*\] logged in")) {
             throw "teleport check: $player never logged in."
@@ -211,12 +211,19 @@ function Invoke-TeleportCheck {
         # Creative mode lets the client stand in the air at the destination without being kicked for flying.
         Invoke-RconCommand -Command "gamemode creative $player" | Out-Null
         $teleported = (Invoke-RconCommand -Command "execute at $player run tp $player ~1000 100 ~").Trim()
+        # The short teleport ticket can keep the destination loaded for a few seconds even without
+        # the position report, so the fill only counts from 8 seconds after the teleport.
+        $notBefore = (Get-Date).AddSeconds(8)
+        while ((Get-Date) -lt $notBefore) {
+            Start-Sleep -Milliseconds 500
+            Assert-ScenarioTime
+        }
         $filled = ''
-        $fillDeadline = (Get-Date).AddSeconds(8)
+        $fillDeadline = (Get-Date).AddSeconds(6)
         do {
-            Start-Sleep -Seconds 2
             Assert-ScenarioTime
             $filled = (Invoke-RconCommand -Command "execute at $player run fill ~-8 ~-1 ~-8 ~7 ~-1 ~7 minecraft:glass").Trim()
+            if ($filled -notmatch 'Successfully filled') { Start-Sleep -Seconds 2 }
         } while ($filled -notmatch 'Successfully filled' -and (Get-Date) -lt $fillDeadline)
         # A command that fails under execute answers nothing over RCON.
         if (-not $filled) { $filled = '(no answer: the fill failed)' }
