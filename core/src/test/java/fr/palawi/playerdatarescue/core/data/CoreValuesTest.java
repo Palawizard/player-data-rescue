@@ -9,10 +9,31 @@ import fr.palawi.playerdatarescue.core.nbt.NbtList;
 import fr.palawi.playerdatarescue.core.nbt.NbtTag;
 import fr.palawi.playerdatarescue.core.nbt.NbtValue;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class CoreValuesTest {
     private static final CoreValues.Spawn SPAWN = new CoreValues.Spawn(8.5, 64, -3.5, "minecraft:overworld");
+
+    @Test
+    void theMinimalProfileKeepsPositionAndGameModeWithFullHealthAndFood() throws Exception {
+        // The smoke test put TpBot in creative mode and teleported it; RCON answered
+        // "Teleported TpBot to 998.500000, 100.000000, -8.500000".
+        NbtCompound minimal = CoreValues.minimalProfile(Fixtures.read("1.21.1-fabric/TpBot.dat"), SPAWN);
+
+        assertEquals(
+                Set.of("DataVersion", "UUID", "Pos", "Rotation", "Dimension", "playerGameType", "Health", "foodLevel"),
+                minimal.keys());
+        NbtList pos = minimal.list("Pos").orElseThrow();
+        assertEquals(
+                List.of(998.5, 100.0, -8.5),
+                pos.elements().stream()
+                        .map(e -> ((NbtValue) e).number().doubleValue())
+                        .toList());
+        assertEquals(1, minimal.number("playerGameType").orElseThrow().intValue());
+        assertEquals(NbtValue.ofFloat(20f), minimal.get("Health"));
+        assertEquals(NbtValue.ofInt(20), minimal.get("foodLevel"));
+    }
 
     @Test
     void anInvalidPositionGoesToTheWorldSpawn() throws Exception {

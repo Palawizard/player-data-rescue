@@ -1,6 +1,8 @@
 package fr.palawi.playerdatarescue.mc;
 
 import fr.palawi.playerdatarescue.core.ModInfo;
+import fr.palawi.playerdatarescue.core.attribution.Attribution;
+import fr.palawi.playerdatarescue.core.attribution.Suspect;
 import fr.palawi.playerdatarescue.core.config.RescueConfig;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.IncidentRecorder;
@@ -11,8 +13,10 @@ import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
 import fr.palawi.playerdatarescue.core.nbt.NbtFormatException;
 import fr.palawi.playerdatarescue.core.rescue.RescueFlow;
 import fr.palawi.playerdatarescue.core.rescue.RescueResult;
+import fr.palawi.playerdatarescue.core.rescue.RescueState;
 import fr.palawi.playerdatarescue.core.rescue.SourceFiles;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,6 +45,7 @@ public final class RescueService {
 
     private static LoaderBridge bridge;
     private static RescueConfig config = RescueConfig.DEFAULTS;
+    private static final RescueState STATE = new RescueState();
     private static final Map<UUID, Unreadable> UNREADABLE = new HashMap<>();
     private static final Set<Object> FAILED_ATTEMPTS = Collections.newSetFromMap(new WeakHashMap<>());
 
@@ -79,6 +84,14 @@ public final class RescueService {
         if (bridge == null || !config.enabled()) {
             return false;
         }
+        if (STATE.skipRescue(join.id())) {
+            LOGGER.warn(
+                    "[{}] {} failed to join again; the last failure was not data-related, so no rescue is tried"
+                            + " until the server restarts",
+                    ModInfo.MOD_ID,
+                    join.name());
+            return false;
+        }
         UNREADABLE.remove(join.id());
         try {
             return rescue(join, failure);
@@ -96,11 +109,14 @@ public final class RescueService {
         DataSource source = join.source();
         Optional<NbtCompound> original = source.read();
         if (original.isEmpty()) {
-            LOGGER.warn(
-                    "[{}] {} could not join, and there is no readable saved data to rescue",
-                    ModInfo.MOD_ID,
-                    join.name());
-            return false;
+            if (source.backupFiles().stream().anyMatch(Files::exists)) {
+                LOGGER.warn(
+                        "[{}] {} could not join, and the saved data cannot be read; nothing to rescue",
+                        ModInfo.MOD_ID,
+                        join.name());
+                return false;
+            }
+            return diagnoseNewPlayer(join, failure);
         }
         RescueFlow flow = new RescueFlow(join.attempts(source), bridge.mods(), join.spawn());
         Trigger trigger = flow.classify(original.get());
@@ -141,20 +157,25 @@ public final class RescueService {
             source.restore();
             throw e;
         }
-        if (result == null) {
-            source.restore();
-            LOGGER.error(
-                    "[{}] {} could not be rescued; the original data is back in place and kept in {}",
-                    ModInfo.MOD_ID,
-                    join.name(),
-                    folder);
-            return false;
-        }
         Incident incident = IncidentRecorder.record(
                 context(join, folder, originals),
                 result,
                 original.get().number("DataVersion").map(Number::intValue));
         String shown = shown(join, folder);
+        if (result.outcome() == Outcome.NOT_DATA_RELATED) {
+            source.restore();
+            STATE.markNotDataRelated(join.id());
+            LOGGER.error(
+                    "[{}] {} could not join, and the saved data is not the cause (even a minimal profile failed);"
+                            + " nothing was changed. Diagnosis: {}",
+                    ModInfo.MOD_ID,
+                    join.name(),
+                    folder.resolve("report.txt"));
+            if (config.notifyOperators()) {
+                join.tellOperators(incident, shown, config.commandPermissionLevel());
+            }
+            return false;
+        }
         join.save();
         store.prune(join.id(), config.maxIncidentsPerPlayer());
         LOGGER.warn(
@@ -168,6 +189,30 @@ public final class RescueService {
                 folder.resolve("report.txt"));
         notify(join, incident, shown, result.outcome());
         return true;
+    }
+
+    /**
+     * A player with no saved data at all could not join: whatever failed, the saved data is not
+     * the cause (SPEC.md section 2). Writes the diagnosis and tries no rescue until a restart.
+     */
+    private static boolean diagnoseNewPlayer(GameJoin join, Exception failure) throws IOException {
+        join.discardHalfPlaced();
+        Path folder = new IncidentStore(join.worldDirectory()).create(join.id(), LocalDateTime.now());
+        List<Suspect> suspects = Attribution.rank(List.of(), Attribution.frames(failure, bridge.mods()), bridge.mods());
+        RescueResult result =
+                new RescueResult(Trigger.T3, Outcome.NOT_DATA_RELATED, List.of(), List.of(), suspects, failure, 0);
+        Incident incident = IncidentRecorder.record(context(join, folder, List.of()), result, Optional.empty());
+        STATE.markNotDataRelated(join.id());
+        LOGGER.error(
+                "[{}] {} could not join as a new player with no saved data, so the saved data is not the cause."
+                        + " Diagnosis: {}",
+                ModInfo.MOD_ID,
+                join.name(),
+                folder.resolve("report.txt"));
+        if (config.notifyOperators()) {
+            join.tellOperators(incident, shown(join, folder), config.commandPermissionLevel());
+        }
+        return false;
     }
 
     /** The exception and its causes in one line, for the log. */

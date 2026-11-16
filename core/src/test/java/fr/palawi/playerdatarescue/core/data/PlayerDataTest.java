@@ -110,4 +110,15 @@ class PlayerDataTest {
         assertEquals(slots, original.list("Inventory").orElseThrow().size());
         assertFalse(data.units().stream().anyMatch(u -> u.id().equals("inv.17")));
     }
+
+    @Test
+    void wholeSectionsCoverEverySetAsideSection() throws Exception {
+        List<String> ids = PlayerData.wholeSections(Fixtures.read("1.20.1-fabric/S2Bot.dat")).stream()
+                .map(Unit::id)
+                .toList();
+
+        assertTrue(ids.contains("section.Inventory"), ids.toString());
+        assertTrue(ids.contains("section.recipeBook"), ids.toString());
+        assertTrue(ids.contains("key.pdrtest:broken"), ids.toString());
+    }
 }

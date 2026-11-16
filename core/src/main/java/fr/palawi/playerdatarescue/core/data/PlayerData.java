@@ -50,6 +50,43 @@ public final class PlayerData {
         return root.number("DataVersion").map(Number::intValue);
     }
 
+    /**
+     * Whole sections of the data, for the minimal profile (SPEC.md section 4.3): each list or
+     * container as one unit, and each unknown top-level key on its own.
+     */
+    public static List<Unit> wholeSections(NbtCompound original) {
+        List<Unit> sections = new java.util.ArrayList<>();
+        java.util.Map<String, Section> keys = new LinkedHashMap<>();
+        keys.put(INVENTORY, Section.INVENTORY);
+        keys.put(EQUIPMENT, Section.EQUIPMENT);
+        keys.put(ENDER_ITEMS, Section.ENDER_CHEST);
+        EFFECT_KEYS.forEach(key -> keys.put(key, Section.EFFECTS));
+        ATTACHMENT_CONTAINERS.forEach(key -> keys.put(key, Section.ATTACHMENTS));
+        keys.put(ROOT_VEHICLE, Section.VEHICLE);
+        keys.put(RECIPE_BOOK, Section.RECIPE_BOOK);
+        keys.forEach((key, section) -> {
+            if (original.contains(key)) {
+                sections.add(new Unit(
+                        "section." + key,
+                        section,
+                        Optional.empty(),
+                        Optional.empty(),
+                        original.get(key).copy()));
+            }
+        });
+        for (String key : original.keys()) {
+            if (!VanillaKeys.isKnown(key)) {
+                sections.add(new Unit(
+                        "key." + key,
+                        Section.UNKNOWN_KEY,
+                        Optional.empty(),
+                        keyNamespace(key),
+                        original.get(key).copy()));
+            }
+        }
+        return sections;
+    }
+
     /** Removes the unit from this copy and returns it. */
     public Unit strip(Unit unit) {
         Container container = containers.remove(unit);

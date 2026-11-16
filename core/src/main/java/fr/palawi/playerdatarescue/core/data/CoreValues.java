@@ -43,6 +43,23 @@ public final class CoreValues {
         return changes;
     }
 
+    /**
+     * The minimal profile (SPEC.md section 4.3): the data version, UUID, position, rotation,
+     * dimension and game modes of the original, with full health and food.
+     */
+    public static NbtCompound minimalProfile(NbtCompound original, Spawn spawn) {
+        NbtCompound minimal = new NbtCompound();
+        for (String key : List.of("DataVersion", "UUID", "Pos", "Rotation", "Dimension", "playerGameType")) {
+            if (original.contains(key)) {
+                minimal.put(key, original.get(key).copy());
+            }
+        }
+        minimal.put("Health", NbtValue.ofFloat(20f));
+        minimal.put("foodLevel", NbtValue.ofInt(20));
+        clamp(minimal, spawn);
+        return minimal;
+    }
+
     private static void clampNumber(
             NbtCompound root, String key, double min, double max, float fallback, List<String> changes) {
         Optional<Number> number = root.number(key);

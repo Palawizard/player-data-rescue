@@ -2,6 +2,7 @@ package fr.palawi.playerdatarescue.core.rescue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import fr.palawi.playerdatarescue.core.Fixtures;
 import fr.palawi.playerdatarescue.core.attribution.Confidence;
@@ -122,5 +123,40 @@ class RescueFlowTest {
         assertEquals(
                 List.of("key.pdrtest:broken"),
                 result.aside().stream().map(a -> a.unit().id()).toList());
+    }
+
+    @Test
+    void aPlacementFailureCausedByTheDataEndsWithTheMinimalProfile() throws Exception {
+        NbtCompound original = Fixtures.read("1.20.1-fabric/S2Bot.dat");
+        Target target = new Target(false, true);
+        RescueFlow flow = new RescueFlow(target, MODS, SPAWN);
+
+        Trigger trigger = flow.classify(original);
+        RescueResult result = flow.run(original, trigger, new IllegalStateException("join failed"));
+
+        assertEquals(Trigger.T3, trigger);
+        assertEquals(Outcome.MINIMAL_PROFILE, result.outcome());
+        assertEquals(List.of("load", "place"), target.calls);
+        assertFalse(target.placed.contains("Inventory"));
+        List<String> aside = result.aside().stream().map(a -> a.unit().id()).toList();
+        assertTrue(aside.contains("section.Inventory"), aside.toString());
+        assertTrue(aside.contains("key.pdrtest:broken"), aside.toString());
+    }
+
+    @Test
+    void aFailureWithEveryProfileIsNotDataRelated() throws Exception {
+        NbtCompound original = Fixtures.read("1.21.1-neoforge/S12Bot.dat");
+        Target target = new Target(true, false);
+        RescueFlow flow = new RescueFlow(target, MODS, SPAWN);
+
+        Trigger trigger = flow.classify(original);
+        RescueResult result = flow.run(original, trigger, new IllegalStateException("join failed"));
+
+        assertEquals(Trigger.T3, trigger);
+        assertEquals(Outcome.NOT_DATA_RELATED, result.outcome());
+        assertEquals(List.of(), result.aside());
+        assertEquals(List.of("load", "place"), target.calls);
+        assertEquals("pdrtest", result.suspects().get(0).modId());
+        assertEquals(Confidence.MEDIUM, result.suspects().get(0).confidence());
     }
 }

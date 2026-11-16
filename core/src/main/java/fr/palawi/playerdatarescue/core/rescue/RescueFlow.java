@@ -24,10 +24,11 @@ import java.util.List;
  *   <li>Salvage (T1): reset invalid core values, then load again and again, each time setting
  *       aside the units the failure points at, until the load works or nothing is left to try,
  *       at most {@link Isolation#MAX_ATTEMPTS} loads. Then place the salvaged data.
+ *   <li>Minimal profile: when salvage did not work, the placement failed, or the failure was at
+ *       placement (placing the same data again would fail the same way), place the minimal
+ *       profile and set every other section aside whole.
+ *   <li>If that fails too, the failure is not data-related (SPEC.md section 2).
  * </ol>
- *
- * <p>When salvage does not work, the placement fails, or the failure was at placement, there is
- * no rescue yet: {@link #run} returns null and the join ends as without this mod.
  */
 public final class RescueFlow {
     private final RescueTarget target;
@@ -51,8 +52,9 @@ public final class RescueFlow {
         return loadFailure != null ? Trigger.T1 : Trigger.T3;
     }
 
-    /** Step 2, after {@link #classify}; null when the data could not be rescued. */
+    /** Steps 2 to 4, after {@link #classify}. */
     public RescueResult run(NbtCompound original, Trigger trigger, Throwable firstFailure) {
+        Throwable placementFailure = firstFailure;
         if (trigger == Trigger.T1) {
             PlayerData data = PlayerData.of(original);
             List<String> coreChanges = CoreValues.clamp(data.root(), spawn);
@@ -82,9 +84,28 @@ public final class RescueFlow {
                     return new RescueResult(
                             trigger, Outcome.RESCUED, aside, coreChanges, suspects, loadFailure, attempts);
                 }
+                placementFailure = placed;
+            } else {
+                placementFailure = failure;
             }
         }
-        return null;
+        return minimal(original, trigger, placementFailure);
+    }
+
+    private RescueResult minimal(NbtCompound original, Trigger trigger, Throwable reason) {
+        NbtCompound profile = CoreValues.minimalProfile(original, spawn);
+        Throwable failure = tryPlace(profile);
+        List<Frame> frames = Attribution.frames(failure != null ? failure : reason, mods);
+        List<Suspect> suspects = Attribution.rank(List.of(), frames, mods);
+        if (failure != null) {
+            return new RescueResult(
+                    trigger, Outcome.NOT_DATA_RELATED, List.of(), List.of(), suspects, failure, attempts);
+        }
+        List<RescueResult.SetAside> aside = new ArrayList<>();
+        for (Unit section : PlayerData.wholeSections(original)) {
+            aside.add(new RescueResult.SetAside(section, reason, suspects));
+        }
+        return new RescueResult(trigger, Outcome.MINIMAL_PROFILE, aside, List.of(), suspects, reason, attempts);
     }
 
     private Throwable tryLoad(NbtCompound data) {
