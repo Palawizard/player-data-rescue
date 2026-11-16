@@ -50,7 +50,7 @@ A player is rescued at most once per join attempt.
 
 | Section | Granularity | Notes |
 |---|---|---|
-| Core | whole | UUID, position, rotation, dimension, game mode, health, food, saturation, XP, air, fire, fall distance, abilities, spawn point. Invalid values are clamped to safe defaults and never quarantined. An unknown dimension sends P to the overworld spawn. |
+| Core | whole | UUID, position, rotation, dimension, game mode, health, food, saturation, XP, air, fire, fall distance, abilities, spawn point. Invalid values are clamped to safe defaults and never quarantined. An unknown dimension sends P to the overworld spawn (1.20.1 and 1.21.1; on 26.3 the spawn is chosen during configuration, before the rescue). |
 | Inventory | per slot | Main inventory, armor, offhand, and equipment slots on versions that store them separately. |
 | Ender chest | per slot | |
 | Effects | per effect | |

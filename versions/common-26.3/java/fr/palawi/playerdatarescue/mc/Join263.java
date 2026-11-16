@@ -126,10 +126,7 @@ public final class Join263 implements GameJoin {
                 pos.getX() + 0.5,
                 pos.getY(),
                 pos.getZ() + 0.5,
-                respawn.dimension().identifier().toString(),
-                server.levelKeys().stream()
-                        .map(key -> key.identifier().toString())
-                        .collect(java.util.stream.Collectors.toSet()));
+                respawn.dimension().identifier().toString());
     }
 
     @Override
