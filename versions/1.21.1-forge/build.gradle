@@ -8,6 +8,9 @@ apply from: '../shared/band.gradle'
 
 minecraft {
     mappings channel: 'official', version: project.minecraft_version
+    // Forge 52 runs on Mojang names, so the release JAR must keep them: a JAR reobfuscated to SRG
+    // fails at its first Minecraft call (ADR-PDR-007). Forge's own 1.20.6 MDK sets the same.
+    reobf = false
 }
 
 repositories {

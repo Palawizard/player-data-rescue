@@ -149,3 +149,11 @@ Options considered:
 - A fake connection created inside the test mod: no network, but it calls the placement code directly and skips the login and configuration listeners where the vanilla catch lives.
 
 Why: only the in-house client covers every Tier A band today, and it exercises the real login path, including the `Couldn't place player in world` catch.
+
+## ADR-PDR-007: Forge 1.21.1 release JAR keeps Mojang names
+
+Status: Accepted.
+
+The Forge 1.21.1 band sets `reobf = false` in its `minecraft` block, so ForgeGradle 6 does not reobfuscate the release JAR to SRG.
+
+Why: Forge 52 runs on Mojang names (`server-1.21.1-official.jar`), but ForgeGradle 6 reobfuscates by default. A reobfuscated JAR calls `m_...` methods that do not exist at runtime: the M1 test mod failed with `NoSuchMethodError`. Forge's own 1.20.6 MDK (Forge 50, ForgeGradle 6.0.24 and later) sets the same flag, with the comment that Forge now uses official mappings at runtime. Checked on 2026-11-16: the release JAR with the reobfuscation failed in the smoke test as soon as it called the game, and passed with `reobf = false`. Forge 1.20.1 (47.x) runs on SRG and keeps the reobfuscation.
