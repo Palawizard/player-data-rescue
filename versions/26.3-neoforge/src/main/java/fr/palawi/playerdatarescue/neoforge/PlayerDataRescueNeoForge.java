@@ -3,8 +3,8 @@ package fr.palawi.playerdatarescue.neoforge;
 import fr.palawi.playerdatarescue.core.ModInfo;
 import fr.palawi.playerdatarescue.mc.PlayerLoadingEvent;
 import fr.palawi.playerdatarescue.mc.RescueService;
-import net.neoforged.neoforge.event.EventHooks;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.event.EventHooks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
