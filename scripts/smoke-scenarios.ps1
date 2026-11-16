@@ -192,6 +192,37 @@ function Invoke-PrepareJoin {
     return $offset
 }
 
+function Invoke-TeleportCheck {
+    # The join client reports its position after a teleport. Without that report, 1.20.1 and
+    # 1.21.1 keep tracking the player at its join position, the destination unloads once the
+    # short teleport ticket expires, and fill there answers "That position is not loaded". On
+    # 26.3 the client must also end each tick, or its second position packet disconnects it.
+    $player = 'TpBot'
+    Set-PlayerModes -Player $player -Modes ''
+    $offset = Get-LatestLogLength
+    $bot = Start-JoinBot -Player $player -StaySeconds 30
+    if (-not (Wait-ForLog -Offset $offset -Pattern "$player\[[^\]]*\] logged in")) {
+        Wait-JoinBot -Bot $bot | Out-Null
+        throw "teleport check: $player never logged in."
+    }
+    # Creative mode lets the client stand in the air at the destination without being kicked for flying.
+    Invoke-RconCommand -Command "gamemode creative $player" | Out-Null
+    $teleported = (Invoke-RconCommand -Command "tp $player 400 100 0").Trim()
+    $filled = ''
+    $fillDeadline = (Get-Date).AddSeconds(20)
+    do {
+        Start-Sleep -Seconds 2
+        Assert-ScenarioTime
+        $filled = (Invoke-RconCommand -Command 'fill 392 99 -8 407 99 7 minecraft:glass').Trim()
+    } while ($filled -notmatch 'Successfully filled' -and (Get-Date) -lt $fillDeadline)
+    $position = (Invoke-RconCommand -Command "data get entity $player Pos").Trim()
+    $output = Wait-JoinBot -Bot $bot
+    $line = "teleport check ${player}: tp -> $teleported; fill at the destination -> $filled; $position"
+    if ($filled -notmatch 'Successfully filled') { throw "$line (the destination is not loaded around the player)" }
+    if ($output -notmatch 'left after staying') { throw "$line; the client did not stay: $output" }
+    return $line
+}
+
 function Install-JoinBot {
     # Compiled once per run instead of once per join by the single-file source launcher.
     $botDir = Join-Path $serverDir 'join-bot'
@@ -208,6 +239,11 @@ function Invoke-SmokeScenarios {
     Install-JoinBot
     $failures = @()
     $summary = @()
+    try {
+        $summary += Invoke-TeleportCheck
+    } catch {
+        $failures += $_.Exception.Message
+    }
     foreach ($scenario in $scenarioDefinitions) {
         $id = $scenario.Id
         try {
