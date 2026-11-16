@@ -1,9 +1,9 @@
 package fr.palawi.playerdatarescue.core.incident;
 
 import fr.palawi.playerdatarescue.core.attribution.Suspect;
-import fr.palawi.playerdatarescue.core.data.Section;
 import fr.palawi.playerdatarescue.core.data.Unit;
 import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
+import fr.palawi.playerdatarescue.core.nbt.NbtList;
 import fr.palawi.playerdatarescue.core.nbt.NbtTag;
 import fr.palawi.playerdatarescue.core.nbt.Snbt;
 import fr.palawi.playerdatarescue.core.rescue.RescueResult;
@@ -85,25 +85,46 @@ public final class IncidentRecorder {
         return incident;
     }
 
-    /** A unit in plain words, for example "Slot 17: 12 x create:brass_ingot". */
+    /** A unit in plain words, for example "Inventory slot 17: 12 x create:brass_ingot". */
     static String describe(Unit unit) {
+        if (unit.id().startsWith("section.")) {
+            return wholeSection(unit);
+        }
         NbtTag payload = unit.payload();
         String slot = unit.slot().orElse("?");
         return switch (unit.section()) {
-                    case INVENTORY -> "Inventory slot " + slot + ": " + stack(payload);
-                    case ENDER_CHEST -> "Ender chest slot " + slot + ": " + stack(payload);
-                    case EQUIPMENT -> "Equipment " + slot + ": " + stack(payload);
-                    case EFFECTS -> "Effect " + unit.id().substring("effect.".length());
-                    case ATTACHMENTS ->
-                        unit.id().startsWith("section.")
-                                ? "All mod attachments (" + unit.id().substring("section.".length()) + ")"
-                                : "Attachment " + unit.id().substring("attachment.".length());
-                    case VEHICLE -> "Vehicle" + vehicle(payload);
-                    case RECIPE_BOOK -> "Recipe book";
-                    case UNKNOWN_KEY -> "Mod data under the key " + unit.id().substring("key.".length());
-                    case CORE -> "Core values";
-                }
-                + (unit.id().startsWith("section.") && unit.section() != Section.ATTACHMENTS ? " (whole section)" : "");
+            case INVENTORY -> "Inventory slot " + slot + ": " + stack(payload);
+            case ENDER_CHEST -> "Ender chest slot " + slot + ": " + stack(payload);
+            case EQUIPMENT -> "Equipment " + slot + ": " + stack(payload);
+            case EFFECTS -> "Effect " + unit.id().substring("effect.".length());
+            case ATTACHMENTS -> "Attachment " + unit.id().substring("attachment.".length());
+            case VEHICLE -> "Vehicle" + vehicle(payload);
+            case RECIPE_BOOK -> "Recipe book";
+            case UNKNOWN_KEY -> "Mod data under the key " + unit.id().substring("key.".length());
+            case CORE -> "Core values";
+        };
+    }
+
+    /** A section set aside whole, by the minimal profile. */
+    private static String wholeSection(Unit unit) {
+        String key = unit.id().substring("section.".length());
+        int size = unit.payload() instanceof NbtList list
+                ? list.size()
+                : unit.payload() instanceof NbtCompound compound ? compound.size() : 1;
+        return switch (unit.section()) {
+            case INVENTORY -> "Whole inventory: " + count(size, "item");
+            case ENDER_CHEST -> "Whole ender chest: " + count(size, "item");
+            case EQUIPMENT -> "All equipment: " + count(size, "item");
+            case EFFECTS -> "All effects: " + count(size, "effect");
+            case ATTACHMENTS -> "All mod attachments (" + key + ")";
+            case VEHICLE -> "Vehicle" + vehicle(unit.payload());
+            case RECIPE_BOOK -> "Recipe book";
+            case UNKNOWN_KEY, CORE -> "Saved data under the key " + key;
+        };
+    }
+
+    private static String count(int size, String noun) {
+        return size + " " + noun + (size == 1 ? "" : "s");
     }
 
     private static String stack(NbtTag payload) {
