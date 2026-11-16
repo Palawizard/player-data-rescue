@@ -112,9 +112,9 @@ public final class IncidentRecorder {
                 ? list.size()
                 : unit.payload() instanceof NbtCompound compound ? compound.size() : 1;
         return switch (unit.section()) {
-            case INVENTORY -> "Whole inventory: " + count(size, "item");
-            case ENDER_CHEST -> "Whole ender chest: " + count(size, "item");
-            case EQUIPMENT -> "All equipment: " + count(size, "item");
+            case INVENTORY -> "Whole inventory: " + count(size, "stack");
+            case ENDER_CHEST -> "Whole ender chest: " + count(size, "stack");
+            case EQUIPMENT -> "All equipment: " + count(size, "stack");
             case EFFECTS -> "All effects: " + count(size, "effect");
             case ATTACHMENTS -> "All mod attachments (" + key + ")";
             case VEHICLE -> "Vehicle" + vehicle(unit.payload());

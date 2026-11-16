@@ -30,11 +30,11 @@ class IncidentRecorderTest {
     }
 
     @Test
-    void aWholeInventoryIsDescribedByItsItemCount() throws Exception {
-        // A new player whose only item is the one given through RCON.
+    void aWholeInventoryIsDescribedByItsStackCount() throws Exception {
+        // A new player whose only items are the 12 bricks given through RCON, in one stack.
         List<Unit> sections = PlayerData.wholeSections(Fixtures.read("1.21.1-fabric/S1Bot.dat"));
 
-        assertEquals("Whole inventory: 1 item", IncidentRecorder.describe(find(sections, "section.Inventory")));
+        assertEquals("Whole inventory: 1 stack", IncidentRecorder.describe(find(sections, "section.Inventory")));
     }
 
     @Test
