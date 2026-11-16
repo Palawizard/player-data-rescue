@@ -1,6 +1,7 @@
 package fr.palawi.playerdatarescue.forge;
 
 import fr.palawi.playerdatarescue.core.ModInfo;
+import fr.palawi.playerdatarescue.mc.RescueService;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +11,7 @@ public final class PlayerDataRescueForge {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModInfo.MOD_ID);
 
     public PlayerDataRescueForge() {
+        RescueService.init(new ForgeBridge());
         LOGGER.info(ModInfo.loadedLine("forge", "26.3"));
     }
 }

@@ -1,0 +1,3 @@
+// Formatting check of the code shared by the bands (versions/shared/*/java, versions/common-*/java),
+// run with the core's wrapper: core/gradlew -p versions spotlessCheck. Each band is its own build.
+rootProject.name = 'player-data-rescue-shared'

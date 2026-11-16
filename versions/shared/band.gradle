@@ -20,9 +20,19 @@ java {
     }
 }
 
+// Shared code (ADR-PDR-008): every band (shared/java), the bands whose loader API matches
+// (shared/<shared_loader>/java, when the band sets shared_loader), and every loader of this
+// Minecraft version (common-<minecraft>/java). It is formatted by versions/build.gradle
+// (core/gradlew -p versions spotlessCheck).
 sourceSets {
     main {
         java.srcDir rootProject.file('../../core/src/main/java')
+        java.srcDir rootProject.file('../shared/java')
+        if (project.findProperty('shared_loader')) {
+            java.srcDir rootProject.file("../shared/${project.shared_loader}/java")
+        }
+        java.srcDir rootProject.file("../common-${project.minecraft_version}/java")
+        resources.srcDir rootProject.file('../shared/resources')
     }
 }
 
