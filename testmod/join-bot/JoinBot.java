@@ -20,9 +20,10 @@ import java.util.zip.Inflater;
 
 /**
  * Dev-only headless client for the smoke tests: logs in to an offline-mode server as a vanilla
- * client, joins the world, answers keep-alives and teleports, and reports how the join ended.
- * It never ships in a mod JAR. Packet ids and layouts come from each version's decompiled
- * sources and data reports (see the profiles below and docs/TESTING.md).
+ * client, joins the world, answers keep-alives and teleports, reports its position after each
+ * teleport and then every second, and reports how the join ended. It never ships in a mod JAR.
+ * Packet ids and layouts come from each version's decompiled sources and data reports (see the
+ * profiles below and docs/TESTING.md).
  *
  * <p>Run with any JDK 17 or later: {@code java JoinBot.java --port 25566 --protocol 763 --name Bot}.
  * Exit codes: 0 joined and stayed, 2 usage error, 3 disconnected by the server, 4 network error
@@ -80,6 +81,7 @@ public final class JoinBot {
                     Map.entry("playAcceptTeleportationOut", 0),
                     Map.entry("playClientInformationOut", 8),
                     Map.entry("playKeepAliveOut", 18),
+                    Map.entry("playMovePlayerPosRotOut", 21),
                     Map.entry("playPongOut", 32)));
 
     // 1.21.1 (protocol 767) and 26.3 (protocol 777): ids from the server's generated packets.json report.
@@ -123,6 +125,7 @@ public final class JoinBot {
                     Map.entry("playClientInformationOut", 10),
                     Map.entry("playConfigurationAcknowledgedOut", 12),
                     Map.entry("playKeepAliveOut", 24),
+                    Map.entry("playMovePlayerPosRotOut", 27),
                     Map.entry("playPongOut", 39)));
 
     private static final Profile MC_26_3 = new Profile(
@@ -165,8 +168,10 @@ public final class JoinBot {
                     Map.entry("playAcceptTeleportationOut", 0),
                     Map.entry("playChunkBatchReceivedOut", 11),
                     Map.entry("playClientInformationOut", 14),
+                    Map.entry("playClientTickEndOut", 13),
                     Map.entry("playConfigurationAcknowledgedOut", 16),
                     Map.entry("playKeepAliveOut", 28),
+                    Map.entry("playMovePlayerPosRotOut", 31),
                     Map.entry("playPlayerLoadedOut", 44),
                     Map.entry("playPongOut", 45)));
 
@@ -186,6 +191,8 @@ public final class JoinBot {
     private Phase phase = Phase.LOGIN;
     private boolean joined;
     private boolean loadedSent;
+    private boolean positionKnown;
+    private long lastMoveSent;
     private double x;
     private double y;
     private double z;
@@ -248,6 +255,9 @@ public final class JoinBot {
                 if (joined && now >= leaveAt) {
                     log("left after staying " + staySeconds + " s");
                     return EXIT_STAYED;
+                }
+                if (positionKnown && now - lastMoveSent >= 1000) {
+                    reportPosition();
                 }
                 if (!joined && now >= deadline) {
                     log("timeout: not joined after " + timeoutSeconds + " s (phase " + phase + ")");
@@ -387,6 +397,8 @@ public final class JoinBot {
         } else if (id == profile.id("playStartConfiguration")) {
             send(new Buf(profile.id("playConfigurationAcknowledgedOut")));
             phase = Phase.CONFIGURATION;
+            // Play packets are not allowed in the configuration phase; the next teleport resumes them.
+            positionKnown = false;
         }
         return null;
     }
@@ -435,6 +447,45 @@ public final class JoinBot {
             send(new Buf(profile.id("playPlayerLoadedOut")));
             loadedSent = true;
         }
+        positionKnown = true;
+        reportPosition();
+    }
+
+    /**
+     * Sends the position. The server may have closed the connection right after sending its
+     * disconnect packet: a failed write then stops the reports and the client reads on, so that
+     * packet and its reason are not lost.
+     */
+    private void reportPosition() {
+        try {
+            sendPosition();
+        } catch (IOException e) {
+            log("position report failed (" + e.getMessage() + "), reading on");
+            positionKnown = false;
+        }
+    }
+
+    /**
+     * On 1.20.1 and 1.21.1 the server moves its chunk tracking (which chunks load and tick around
+     * the player) only when the client reports a position, not when it accepts a teleport. The
+     * client sends its position after each teleport, then every second, as a vanilla client does
+     * when it stands still.
+     */
+    private void sendPosition() throws IOException {
+        // The last byte is 0, not on ground: a boolean on 1.20.1 and 1.21.1, a flag byte on 26.3.
+        send(new Buf(profile.id("playMovePlayerPosRotOut"))
+                .f64(x)
+                .f64(y)
+                .f64(z)
+                .f32(yRot)
+                .f32(xRot)
+                .u8(0));
+        // On 26.3 the server accepts one position per client tick, and a client tick ends with this
+        // packet. 1.20.1 and 1.21.1 have no such packet.
+        if (profile.id("playClientTickEndOut") >= 0) {
+            send(new Buf(profile.id("playClientTickEndOut")));
+        }
+        lastMoveSent = System.currentTimeMillis();
     }
 
     private Buf clientInformation(int packetId) {

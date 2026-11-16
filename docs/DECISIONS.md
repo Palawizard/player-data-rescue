@@ -140,6 +140,8 @@ The production-JAR smoke test joins real players through `testmod/join-bot/JoinB
 
 Checked on 2026-11-13: the client joined and stayed on the real dedicated server of all eight Tier A band and loader pairs (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3), with network compression on.
 
+Amended on 2026-11-16: the client also reports its position after each teleport and then every second, and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket`. Without the report, 1.20.1 and 1.21.1 keep tracking a teleported player at its join position, so the destination does not stay loaded; on 26.3 a second position packet in one client tick disconnects the client. The same change was first made in the copy of this client kept by Chunk Pruner. The smoke test checks it on every band by teleporting the client 1000 blocks away and filling blocks under it ([TESTING.md](TESTING.md)).
+
 Options considered:
 
 - mineflayer and node-minecraft-protocol (Node.js): their protocol data (`minecraft-data` 3.119.0 on npm, 2026-11-13) stops at 26.1, so they cannot join 26.3. They would also add Node.js and a package tree to the test setup.
