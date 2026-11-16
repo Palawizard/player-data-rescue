@@ -118,6 +118,9 @@ public final class RescueService {
             }
             return diagnoseNewPlayer(join, failure);
         }
+        // A half-placed player (T3) leaves before any attempt loads the same player again, and is
+        // never saved, whatever happens next.
+        join.discardHalfPlaced();
         RescueFlow flow = new RescueFlow(join.attempts(source), bridge.mods(), join.spawn());
         Trigger trigger = flow.classify(original.get());
         if (trigger == Trigger.T3 && !config.rescuePlacementFailures()) {
@@ -149,7 +152,6 @@ public final class RescueService {
                     describe(failure),
                     folder);
         }
-        join.discardHalfPlaced();
         RescueResult result;
         try {
             result = flow.run(original.get(), trigger, failure);
@@ -157,10 +159,26 @@ public final class RescueService {
             source.restore();
             throw e;
         }
-        Incident incident = IncidentRecorder.record(
-                context(join, folder, originals),
-                result,
-                original.get().number("DataVersion").map(Number::intValue));
+        Incident incident;
+        try {
+            incident = IncidentRecorder.record(
+                    context(join, folder, originals),
+                    result,
+                    original.get().number("DataVersion").map(Number::intValue));
+        } catch (IOException | RuntimeException e) {
+            if (result.outcome() == Outcome.NOT_DATA_RELATED) {
+                source.restore();
+                throw e;
+            }
+            // The player is already in the world with the rescued data: keep them in.
+            LOGGER.error(
+                    "[{}] {} was rescued, but the reports could not be written to {}",
+                    ModInfo.MOD_ID,
+                    join.name(),
+                    folder,
+                    e);
+            incident = null;
+        }
         String shown = shown(join, folder);
         if (result.outcome() == Outcome.NOT_DATA_RELATED) {
             source.restore();
@@ -176,8 +194,16 @@ public final class RescueService {
             }
             return false;
         }
-        join.save();
-        store.prune(join.id(), config.maxIncidentsPerPlayer());
+        try {
+            join.save();
+            store.prune(join.id(), config.maxIncidentsPerPlayer());
+        } catch (IOException | RuntimeException e) {
+            // The game saves the player again later, at the latest when they leave.
+            LOGGER.error("[{}] {} was rescued, but saving them right away failed", ModInfo.MOD_ID, join.name(), e);
+        }
+        if (incident == null) {
+            return true;
+        }
         LOGGER.warn(
                 "[{}] rescued {} ({}, {}): {} part(s) set aside after {} attempt(s). Report: {}",
                 ModInfo.MOD_ID,
