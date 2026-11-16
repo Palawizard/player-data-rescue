@@ -7,7 +7,8 @@
 # Uses from prod-smoke.ps1: $band, $BandId, $Loader, $serverDir, $javaExe, $ServerPort,
 # $RconPort, $rconPassword, and Read-ExactBytes, Send-RconPacket, Read-RconPacketId.
 # Proof is a test mod log line expected while preparing; JoinProof is expected at each
-# later join, so a scenario cannot pass without the failure it is meant to cause.
+# later join, so a scenario cannot pass without the failure it is meant to cause. Before the
+# scenarios, Invoke-TeleportCheck checks that the join client keeps a teleported player loaded.
 
 $scenarioDefinitions = @(
     @{ Id = 'S1'; Player = 'S1Bot'; Prepare = @('rename-item'); Join = @('');
@@ -197,27 +198,33 @@ function Invoke-TeleportCheck {
     # 1.21.1 keep tracking the player at its join position, the destination unloads once the
     # short teleport ticket expires, and fill there answers "That position is not loaded". On
     # 26.3 the client must also end each tick, or its second position packet disconnects it.
+    # The destination is 1000 blocks from the join position, so neither the spawn chunks nor the
+    # chunks loaded around the join position can cover it, whatever the world's random spawn.
     $player = 'TpBot'
     Set-PlayerModes -Player $player -Modes ''
     $offset = Get-LatestLogLength
-    $bot = Start-JoinBot -Player $player -StaySeconds 30
-    if (-not (Wait-ForLog -Offset $offset -Pattern "$player\[[^\]]*\] logged in")) {
-        Wait-JoinBot -Bot $bot | Out-Null
-        throw "teleport check: $player never logged in."
+    $bot = Start-JoinBot -Player $player -StaySeconds 10
+    try {
+        if (-not (Wait-ForLog -Offset $offset -Pattern "$player\[[^\]]*\] logged in")) {
+            throw "teleport check: $player never logged in."
+        }
+        # Creative mode lets the client stand in the air at the destination without being kicked for flying.
+        Invoke-RconCommand -Command "gamemode creative $player" | Out-Null
+        $teleported = (Invoke-RconCommand -Command "execute at $player run tp $player ~1000 100 ~").Trim()
+        $filled = ''
+        $fillDeadline = (Get-Date).AddSeconds(8)
+        do {
+            Start-Sleep -Seconds 2
+            Assert-ScenarioTime
+            $filled = (Invoke-RconCommand -Command "execute at $player run fill ~-8 ~-1 ~-8 ~7 ~-1 ~7 minecraft:glass").Trim()
+        } while ($filled -notmatch 'Successfully filled' -and (Get-Date) -lt $fillDeadline)
+        # A command that fails under execute answers nothing over RCON.
+        if (-not $filled) { $filled = '(no answer: the fill failed)' }
+        $position = (Invoke-RconCommand -Command "data get entity $player Pos").Trim()
+    } finally {
+        $output = Wait-JoinBot -Bot $bot
     }
-    # Creative mode lets the client stand in the air at the destination without being kicked for flying.
-    Invoke-RconCommand -Command "gamemode creative $player" | Out-Null
-    $teleported = (Invoke-RconCommand -Command "tp $player 400 100 0").Trim()
-    $filled = ''
-    $fillDeadline = (Get-Date).AddSeconds(20)
-    do {
-        Start-Sleep -Seconds 2
-        Assert-ScenarioTime
-        $filled = (Invoke-RconCommand -Command 'fill 392 99 -8 407 99 7 minecraft:glass').Trim()
-    } while ($filled -notmatch 'Successfully filled' -and (Get-Date) -lt $fillDeadline)
-    $position = (Invoke-RconCommand -Command "data get entity $player Pos").Trim()
-    $output = Wait-JoinBot -Bot $bot
-    $line = "teleport check ${player}: tp -> $teleported; fill at the destination -> $filled; $position"
+    $line = "teleport check ${player}: tp -> $teleported; fill under the player -> $filled; $position"
     if ($filled -notmatch 'Successfully filled') { throw "$line (the destination is not loaded around the player)" }
     if ($output -notmatch 'left after staying') { throw "$line; the client did not stay: $output" }
     return $line
