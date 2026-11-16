@@ -7,7 +7,7 @@
 # Uses from prod-smoke.ps1: $band, $BandId, $Loader, $serverDir, $javaExe, $ServerPort,
 # $RconPort, $rconPassword, and Read-ExactBytes, Send-RconPacket, Read-RconPacketId.
 # Proof is a test mod log line expected while preparing; JoinProof is expected at each
-# later join, so a scenario cannot pass without the failure it is meant to cause. Before the
+# later join, so a scenario cannot pass without the failure it is meant to cause. After the
 # scenarios, Invoke-TeleportCheck checks that the join client keeps a teleported player loaded.
 
 $scenarioDefinitions = @(
@@ -195,15 +195,20 @@ function Invoke-PrepareJoin {
 
 function Invoke-TeleportCheck {
     # The join client reports its position after a teleport. Without that report, 1.20.1 and
-    # 1.21.1 keep tracking the player at its join position, the destination unloads once the
-    # short teleport ticket expires, and fill there answers "That position is not loaded". On
-    # 26.3 the client must also end each tick, or its second position packet disconnects it.
-    # The destination is 1000 blocks from the join position, so neither the spawn chunks nor the
-    # chunks loaded around the join position can cover it, whatever the world's random spawn.
+    # 1.21.1 keep tracking the player at its join position, and the destination unloads once the
+    # short ticket of the teleport expires. On 26.3 the client must also end each tick, or its
+    # second position packet disconnects it. The destination is 1000 blocks from the join
+    # position, so neither the spawn chunks nor the chunks around the join position cover it.
+    # The teleport ticket lasts a few server ticks, which can take seconds on a busy server, so
+    # the destination must stay loaded at every check from 8 to 24 seconds after the teleport,
+    # and the fill must work at the end. The check runs after the scenarios, once the server has
+    # settled.
     $player = 'TpBot'
     Set-PlayerModes -Player $player -Modes ''
     $offset = Get-LatestLogLength
-    $bot = Start-JoinBot -Player $player -StaySeconds 25
+    $bot = Start-JoinBot -Player $player -StaySeconds 40
+    $unloaded = @()
+    $checks = 0
     try {
         if (-not (Wait-ForLog -Offset $offset -Pattern "$player\[[^\]]*\] logged in")) {
             throw "teleport check: $player never logged in."
@@ -211,27 +216,26 @@ function Invoke-TeleportCheck {
         # Creative mode lets the client stand in the air at the destination without being kicked for flying.
         Invoke-RconCommand -Command "gamemode creative $player" | Out-Null
         $teleported = (Invoke-RconCommand -Command "execute at $player run tp $player ~1000 100 ~").Trim()
-        # The short teleport ticket can keep the destination loaded for a few seconds even without
-        # the position report, so the fill only counts from 8 seconds after the teleport.
-        $notBefore = (Get-Date).AddSeconds(8)
-        while ((Get-Date) -lt $notBefore) {
-            Start-Sleep -Milliseconds 500
+        $start = Get-Date
+        while (((Get-Date) - $start).TotalSeconds -lt 24) {
+            Start-Sleep -Seconds 2
             Assert-ScenarioTime
+            $elapsed = [int]((Get-Date) - $start).TotalSeconds
+            if ($elapsed -lt 8) { continue }
+            $checks++
+            # A command that fails under execute answers nothing over RCON.
+            $answer = (Invoke-RconCommand -Command "execute at $player if loaded ~ ~-1 ~").Trim()
+            if ($answer -notmatch 'Test passed') { $unloaded += "+${elapsed}s" }
         }
-        $filled = ''
-        $fillDeadline = (Get-Date).AddSeconds(6)
-        do {
-            Assert-ScenarioTime
-            $filled = (Invoke-RconCommand -Command "execute at $player run fill ~-8 ~-1 ~-8 ~7 ~-1 ~7 minecraft:glass").Trim()
-            if ($filled -notmatch 'Successfully filled') { Start-Sleep -Seconds 2 }
-        } while ($filled -notmatch 'Successfully filled' -and (Get-Date) -lt $fillDeadline)
-        # A command that fails under execute answers nothing over RCON.
+        $filled = (Invoke-RconCommand -Command "execute at $player run fill ~-8 ~-1 ~-8 ~7 ~-1 ~7 minecraft:glass").Trim()
         if (-not $filled) { $filled = '(no answer: the fill failed)' }
         $position = (Invoke-RconCommand -Command "data get entity $player Pos").Trim()
     } finally {
         $output = Wait-JoinBot -Bot $bot
     }
-    $line = "teleport check ${player}: tp -> $teleported; fill under the player -> $filled; $position"
+    $line = "teleport check ${player}: tp -> $teleported; destination loaded at $($checks - $unloaded.Count) of $checks checks from +8 s to +24 s; fill under the player -> $filled; $position"
+    if ($checks -lt 6) { throw "$line (too few checks)" }
+    if ($unloaded.Count -gt 0) { throw "$line (not loaded at $($unloaded -join ', '))" }
     if ($filled -notmatch 'Successfully filled') { throw "$line (the destination is not loaded around the player)" }
     if ($output -notmatch 'left after staying') { throw "$line; the client did not stay: $output" }
     return $line
@@ -253,11 +257,6 @@ function Invoke-SmokeScenarios {
     Install-JoinBot
     $failures = @()
     $summary = @()
-    try {
-        $summary += Invoke-TeleportCheck
-    } catch {
-        $failures += $_.Exception.Message
-    }
     foreach ($scenario in $scenarioDefinitions) {
         $id = $scenario.Id
         try {
@@ -289,6 +288,11 @@ function Invoke-SmokeScenarios {
             $failures += "$id failed: $($_.Exception.Message)"
             if ($scenarioServer.HasExited) { break }
         }
+    }
+    try {
+        $summary += Invoke-TeleportCheck
+    } catch {
+        $failures += $_.Exception.Message
     }
     Write-Host "Failure scenarios on $BandId/$Loader (no rescue code yet):"
     foreach ($line in $summary) { Write-Host "  $line" }
