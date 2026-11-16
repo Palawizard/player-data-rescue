@@ -397,6 +397,8 @@ public final class JoinBot {
         } else if (id == profile.id("playStartConfiguration")) {
             send(new Buf(profile.id("playConfigurationAcknowledgedOut")));
             phase = Phase.CONFIGURATION;
+            // Play packets are not allowed in the configuration phase; the next teleport resumes them.
+            positionKnown = false;
         }
         return null;
     }
@@ -456,7 +458,7 @@ public final class JoinBot {
      * when it stands still.
      */
     private void sendPosition() throws IOException {
-        // The last byte is the on-ground flag (bit 0) on every supported version.
+        // The last byte is 0, not on ground: a boolean on 1.20.1 and 1.21.1, a flag byte on 26.3.
         send(new Buf(profile.id("playMovePlayerPosRotOut"))
                 .f64(x)
                 .f64(y)
