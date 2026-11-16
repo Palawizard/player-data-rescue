@@ -70,13 +70,13 @@ Observed on 2026-11-16 on every Tier A band (Forge and Fabric 1.20.1; Forge, Fab
 
 "Lost" means the game drops the unit while loading, and the next save writes the player without it. Those units are trigger T4 (SPEC.md section 2), a later milestone. The details per band are in [ARCHITECTURE.md](ARCHITECTURE.md), Hook points.
 
-For S2, an operator (`OpBot`, made operator over RCON) is online during the rescue and must receive the operator notice. Every bot is a vanilla client without this mod and prints each system message it receives (`[join-bot] chat: ...`), which covers S9: the client connects normally and the messages decode as vanilla text components.
+For S2, an operator (`OpBot`, made operator over RCON) is online during the rescue and must receive the operator notice. Every bot speaks the vanilla protocol without this mod (it is not the real game client) and prints each system message it receives (`[join-bot] chat: ...`), which covers S9: the client connects normally and the messages decode as vanilla text components.
 
 After the scenarios, the server is stopped and started again without the release JAR (S10): the world must load, `S12Bot` must join, the mod must log nothing, and every file under `playerdatarescue/` must keep its SHA-256.
 
 ## Normal path cost (S12)
 
-With `-Dplayerdatarescue.timing=true`, which `prod-smoke.ps1` passes to the server when it runs the scenarios, the mod adds up the time spent in its hooks during a join, measured with `System.nanoTime()` around the body of each hook, and logs it when the login handler returns: `normal path for S12Bot: <µs> us in <n> hook call(s)`. Without the property, each hook only reads one static field. S12 fails above 1000 µs. The hooks on a normal join are the login handler's return hook on every band, and on 1.20.1 also the read hook of `PlayerDataStorage#load`; the placement guard and the unreadable file hook only run on a failure.
+With `-Dplayerdatarescue.timing=true`, which `prod-smoke.ps1` passes to the server when it runs the scenarios, the mod adds up the time spent in its hooks during a join, measured with `System.nanoTime()` around the body of each hook, and logs it when the login handler returns: `normal path for S12Bot: <µs> us in <n> hook call(s)`. Without the property, the timing costs one static field read per hook; the hooks themselves still run. S12 fails above 1000 µs. The hooks on a normal join are the login handler's return hook on every band, and on 1.20.1 also the read hook of `PlayerDataStorage#load`; the placement guard and the unreadable file hook only run on a failure.
 
 Measured on 2026-11-16 in the production-JAR smoke test (`./scripts/build-all-version-bands.ps1`, Linux container, 4 cores), second join of `S12Bot`, whose data was saved by its first join:
 
@@ -109,7 +109,7 @@ Steps:
 3. Close the game. In the game directory, create `pdrtest.properties` with one line: `<your name>=attachment-throws`.
 4. Start the game and open the world `S8`.
 5. Expected: the world opens and you are in it, at the position where you left, with your inventory. The chat shows "Some of your saved data could not be loaded and was set aside. An admin can restore it."
-6. Close the game. Check `saves/S8/playerdatarescue/<your uuid>/<date>/`: `original/` holds `level.dat` and `level.dat_old`; `report.txt` lists "Mod data under the key pdrtest:broken (pdrtest)" with pdrtest as most likely; `quarantine/key.pdrtest_broken.nbt` exists.
+6. Close the game. Check `saves/S8/playerdatarescue/<your uuid>/<date>/`: `original/` holds `level.dat` and `level.dat_old`; `report.txt` lists "Mod data under the key pdrtest:broken (pdrtest)" with pdrtest as most likely, and `quarantine/key.pdrtest_broken.nbt` exists. On Forge the attachment is a capability: the line is "Attachment pdrtest:broken (pdrtest)" and the file `quarantine/attachment.pdrtest_broken.nbt`.
 7. Remove `pdrtest.properties`, open the world again: no new incident folder is created.
 
 Without the mod (control): the same steps with only the test mod in `mods` end at step 4 with "Failed to load" or a return to the title screen, and the log shows `Couldn't place player in world`.

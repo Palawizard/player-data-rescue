@@ -149,7 +149,7 @@ The core splits the saved tag into units (`PlayerData`), whatever the loader: Fo
 
 ## Open questions
 
-- None for M3. The units that vanilla drops without an exception (S1, S3, S4, and S2 and S13 on NeoForge) are trigger T4 in [SPEC.md](SPEC.md), a later milestone with its own hooks.
+- The units that vanilla drops without an exception (S1, S3, S4, and S2 and S13 on NeoForge) are trigger T4 in [SPEC.md](SPEC.md), a later milestone with its own hooks.
 - The 1.20.1 placement that waits for a player with the same UUID to leave (`DELAY_ACCEPT`) runs outside the guarded try, so a failure there is not rescued (Hook points, 1.20.1 gap).
 - The report's next step and the player message name `/pdrescue restore`, and SPEC.md section 3 asks for a clickable `/pdrescue show` in the operator message. The commands come with M3; until then the operator message has no link.
 - No automated scenario shows a rescued placement after a failed one (a data-related T3 that ends `joined`). S11 shows that the second placement runs to its end on every band, but with the join client, not the vanilla client. Showing it needs a test mode whose placement failure depends on the data, and a check with a real client.
