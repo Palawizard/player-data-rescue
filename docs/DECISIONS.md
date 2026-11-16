@@ -132,6 +132,8 @@ Consequences:
 - Construction events (`EntityConstructing` on Forge and NeoForge, `AttachCapabilitiesEvent` on Forge) fire once per attempt. Mods see one more construction, as when a player reconnects.
 - A failure inside `PlayerList#placeNewPlayer` (T3) can happen after the player was added to the player list. Cleaning up that case before the retry is not checked yet: M2 must cover it with the test mod's placement failure.
 
+Amended on 2026-11-16: M2 covers that case. The half-placed player is removed and never saved, and the connection is put back before the next attempt (ADR-PDR-010).
+
 ## ADR-PDR-006: Headless player join in the smoke test
 
 Status: Accepted.
@@ -157,3 +159,41 @@ Status: Accepted.
 The Forge 1.21.1 band sets `reobf = false` in its `minecraft` block, so ForgeGradle 6 does not reobfuscate the release JAR to SRG.
 
 Why: Forge 52 runs on Mojang names (`server-1.21.1-official.jar`), but ForgeGradle 6 reobfuscates by default. A reobfuscated JAR calls `m_...` methods that do not exist at runtime: the M1 test mod failed with `NoSuchMethodError`. Forge's own 1.20.6 MDK (Forge 50, ForgeGradle 6.0.24 and later) sets the same flag, with the comment that Forge now uses official mappings at runtime. Checked on 2026-11-16: the release JAR with the reobfuscation failed in the smoke test as soon as it called the game, and passed with `reobf = false`. Forge 1.20.1 (47.x) runs on SRG and keeps the reobfuscation.
+
+## ADR-PDR-008: Code shared between bands
+
+Status: Accepted.
+
+Code that is the same for several bands is compiled into each of them from shared source folders, like the core (ADR-001), and never copied:
+
+- `versions/shared/java`: every band. The rescue orchestration (`RescueService`), the data source of a player file, the player and operator messages, and the mixin owner lookup.
+- `versions/shared/<loader>/java`: the bands whose loader API is the same, chosen by `shared_loader` in the band's `gradle.properties`. `fabric` (Fabric Loader 0.15 and later) and `forge` (Forge 47 and 52). Forge 66 (26.3) has a static `ModList` and NeoForge 21.1 and 26.3 read mod files differently, so those bands keep their loader bridge in their own folder.
+- `versions/common-<minecraft>/java`: every loader of one Minecraft version. The game calls of a join (`GameJoin`), the host data source, and the mixins whose targets and descriptors are the same on every loader of that version.
+
+A mixin that differs on one loader of a version lives in that band's folder and replaces the shared one in the band's mixin config: NeoForge builds its login cookie with `createCookie(ClientInformation, ConnectionType)`. The shared folders are formatted by `versions/build.gradle` (`core/gradlew -p versions spotlessCheck`).
+
+Why: the code of the three loaders of a Minecraft version calls the same game methods, and the orchestration calls none. One copy per version keeps the bands from drifting apart. A shared folder still compiles against each band's own game and loader, so a difference shows up as a build failure of that band.
+
+## ADR-PDR-009: Plain Mixin injectors, no MixinExtras
+
+Status: Accepted.
+
+The mod uses only Mixin's own injectors and accessors: `@Inject` (with `cancellable` and, for the placement guard, `LocalCapture.CAPTURE_FAILHARD`), `@ModifyVariable`, `@Invoker` and `@Accessor`. MixinExtras is not needed, and ADR-PDR-002 stays unused.
+
+- Placement guard: an `@Inject` at the `Logger.error` call inside the catch of the login handler (`ServerLoginPacketListenerImpl#handleAcceptedLogin` on 1.20.1, `ServerConfigurationPacketListenerImpl#handleConfigurationFinished` on 1.21.1 and 26.3). The caught exception is a captured local. When the rescue lets the player in, the handler cancels, so the game neither logs "Couldn't place player in world" nor disconnects. Otherwise the game goes on as without the mod. A second `@Inject` at the handler's `RETURN` finishes a T2 incident once the player is in.
+- T2: an `@Inject` at the `Logger.warn` call of the player file read that fails (`PlayerDataStorage#load`), and on 1.20.1 a `@ModifyVariable` on the tag the read returns, to load the `.dat_old` the game does not try on that version.
+- Persistence and cleanup: an `@Invoker` for `PlayerList#save`, an `@Inject` at the head of `PlayerList#save` that skips the player instances of failed attempts, and an `@Accessor` for the private netty channel of `Connection`, to put the connection back before another placement (ADR-PDR-010).
+
+On Forge 1.20.1, which runs on SRG names, the mixin annotation processor of MixinGradle 0.7.38 (`org.spongepowered:mixin:0.8.5:processor`) writes `playerdatarescue.refmap.json` from the Mojang names in the source. The other bands run on Mojang names (Forge 1.21.1 since ADR-PDR-007) or are remapped by Loom, and need no refmap.
+
+Why: an injection inside the catch wraps the whole placement, whatever throws in it, without changing the call itself, so it does not conflict with other mods that redirect or wrap `placeNewPlayer`. A `@Redirect` of that call would. `CAPTURE_FAILHARD` makes a changed local layout fail when the class loads, which the production-JAR smoke test of every band would show, rather than skip the guard.
+
+## ADR-PDR-010: Attempts go through the game's own read
+
+Status: Accepted.
+
+Each rescue attempt (ADR-PDR-005) writes its candidate data where the game reads the joining player's data, then lets the game read it: the player file `<uuid>.dat` (dedicated server, LAN guest, and the 26.3 host), or on 1.20.1 and 1.21.1 the host's `Data.Player` tag that the game keeps in memory after loading `level.dat`. The original files are backed up first (SPEC.md step 1), and a candidate equal to the original is not written. When the failure is not data-related, the original is written back, so nothing is changed.
+
+A placement that fails after the game added the player (T3) leaves a half-placed player in the player list and the level. Before the next attempt, that player is removed with `PlayerList#remove`, the game's own leave path, and every player instance of a failed attempt is marked so that `PlayerList#save` skips it: neither that removal nor the game's later disconnect saves its half-loaded state over the data being rescued. The connection is put back too, since the game never places a player twice on one connection: on 1.20.1 Forge's packet filters are removed, and on 1.21.1 and 26.3 a handler runs the protocol setup task of the next placement in place of the one the end of configuration left (ARCHITECTURE.md, Cleanup after a failed placement). Checked on 2026-11-16: without this, the second placement failed on every Tier A band except Fabric 1.20.1.
+
+Why: the game's read path includes the data fixers and the loaders' own events around the read (Forge's and NeoForge's player loading events, which Forge 1.21.1 fires inside the read itself). Feeding the tag through any other way would skip some of them on some band. Writing the file costs a few small writes on a rare event, and the backup is already on disk.
