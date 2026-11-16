@@ -257,14 +257,7 @@ public final class JoinBot {
                     return EXIT_STAYED;
                 }
                 if (positionKnown && now - lastMoveSent >= 1000) {
-                    try {
-                        sendPosition();
-                    } catch (IOException e) {
-                        // The server may have closed the connection after sending its disconnect
-                        // packet: stop reporting and read on, so that packet is not lost.
-                        log("position report failed (" + e.getMessage() + "), reading on");
-                        positionKnown = false;
-                    }
+                    reportPosition();
                 }
                 if (!joined && now >= deadline) {
                     log("timeout: not joined after " + timeoutSeconds + " s (phase " + phase + ")");
@@ -455,7 +448,21 @@ public final class JoinBot {
             loadedSent = true;
         }
         positionKnown = true;
-        sendPosition();
+        reportPosition();
+    }
+
+    /**
+     * Sends the position. The server may have closed the connection right after sending its
+     * disconnect packet: a failed write then stops the reports and the client reads on, so that
+     * packet and its reason are not lost.
+     */
+    private void reportPosition() {
+        try {
+            sendPosition();
+        } catch (IOException e) {
+            log("position report failed (" + e.getMessage() + "), reading on");
+            positionKnown = false;
+        }
     }
 
     /**
