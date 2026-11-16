@@ -1,6 +1,6 @@
 # Core test fixtures
 
-Every file here was written by a real dedicated server with the dev-only test mod (`testmod/`, docs/TESTING.md), during the production-JAR smoke test of 2026-11-16 (`scripts/prod-smoke.ps1`). The smoke test copies the player files of each scenario right after its preparation joins to `build/prod-smoke/fixtures/<band>-<loader>/<scenario>/`; the files below were taken from there. Players are offline-mode players named `<scenario>Bot`. Values the tests expect come from the setup commands, not from the code under test.
+Every file here was written by a real dedicated server with the dev-only test mod (`testmod/`, docs/TESTING.md), during the production-JAR smoke test of 2026-11-16 (`scripts/prod-smoke.ps1`). The smoke test copies the player files of each scenario right after its preparation joins to `build/prod-smoke/fixtures/<band>-<loader>/<scenario>/`; the files below were taken from there. Players are offline-mode players named `<scenario>Bot`. Values the tests expect come from the setup commands, not from the code under test. On Forge and Fabric the test mod saves its test attachment `pdrtest:broken` (the int 42) for every player, whatever the mode (docs/TESTING.md, Dev-only test mod), so every Forge and Fabric file below has it; on NeoForge only the files made with mode `attach` have it.
 
 | File | Minecraft, loader | How it was made |
 |---|---|---|
