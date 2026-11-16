@@ -88,7 +88,7 @@ Each attempt of a rescue builds a new player:
 
 - 1.20.1: `new ServerPlayer(MinecraftServer, ServerLevel, GameProfile)`, then `PlayerList#load(ServerPlayer)` (load only) or `PlayerList#placeNewPlayer(Connection, ServerPlayer)`.
 - 1.21.1: `PlayerList#getPlayerForLogin(GameProfile, ClientInformation)`, which only calls the constructor on this version, then `PlayerList#load(ServerPlayer)` or `PlayerList#placeNewPlayer(Connection, ServerPlayer, CommonListenerCookie)`.
-- 26.3: load only builds `new ServerPlayer(MinecraftServer, ServerLevel, GameProfile, ClientInformation)` and loads `PlayerList#loadPlayerData(NameAndId)` through `TagValueInput`, as `PrepareSpawnTask$Ready#spawn` does; placement calls `PrepareSpawnTask#spawnPlayer` again.
+- 26.3: load only builds `new ServerPlayer(MinecraftServer, ServerLevel, GameProfile, ClientInformation)` and loads `PlayerList#loadPlayerData(NameAndId)` through `TagValueInput`, as `PrepareSpawnTask$Ready#spawn` does. On 26.3 the loader's player loading event is not part of the read: `Ready#spawn` fires it right after `ServerPlayer#load`, Forge only when the player has saved data (`ForgeEventFactory.firePlayerLoadingEvent(Player, File, String)`) and NeoForge every time (`EventHooks.firePlayerLoadingEvent(Player, PlayerList, String)`), so load only fires it the same way (`PlayerLoadingEvent`, set by each loader's entrypoint). Placement calls `PrepareSpawnTask#spawnPlayer` again.
 
 ### Cleanup after a failed placement (T3)
 

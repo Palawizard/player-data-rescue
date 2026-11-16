@@ -100,6 +100,7 @@ public final class Join263 implements GameJoin {
                     Optional<CompoundTag> tag = server.getPlayerList().loadPlayerData(new NameAndId(profile));
                     tag.map(t -> TagValueInput.create(reporter, server.registryAccess(), t))
                             .ifPresent(player::load);
+                    PlayerLoadingEvent.fire(server, player, tag.isPresent());
                 }
             }
 

@@ -14,7 +14,7 @@ import java.util.Optional;
 /**
  * Where the joining player's data comes from (SPEC.md section 1), and how an attempt hands its
  * data to the game: each attempt writes its candidate where the game reads, so the game's own read
- * path runs, loader events included (ADR-PDR-010). {@link #restore} puts the original back. A
+ * path runs, with the loader events inside it (ADR-PDR-010). {@link #restore} puts the original back. A
  * candidate equal to the original is not written, so reading the original again changes nothing.
  */
 public abstract class DataSource {
