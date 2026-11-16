@@ -36,6 +36,12 @@ public final class TestModes {
     public static final String UNREADABLE_ATTACHMENT = "unreadable-attachment";
     /** Placement throws for this player, whatever the saved data. */
     public static final String THROW_ON_PLACEMENT = "throw-on-placement";
+    /**
+     * While this player is online, the dedicated server writes their data into {@code level.dat}
+     * as {@code Data.Player} at each world save, as the integrated server does for its host
+     * (Fabric 1.20.1 and 1.21.1, for the SPEC.md scenario S8 fixture).
+     */
+    public static final String HOST_DATA = "host-data";
 
     public static final String REMOVED_NAMESPACE = "pdrtest_removed";
     public static final String REMOVED_ITEM = REMOVED_NAMESPACE + ":brass_ingot";

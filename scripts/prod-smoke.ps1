@@ -18,7 +18,8 @@ param(
 # line, then stop the server over RCON and check that it shut down cleanly. This tests
 # the file players install, not a dev run (gradlew runServer). Unless -SkipScenarios is
 # given, the dev-only test mod is installed too and the failure scenarios of
-# smoke-scenarios.ps1 run before the server is stopped.
+# smoke-scenarios.ps1 run before the server is stopped, and then the server starts once more
+# without the release JAR (SPEC.md scenario S10).
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 . (Join-Path $PSScriptRoot 'smoke-scenarios.ps1')
@@ -175,12 +176,14 @@ function Get-ServerLog {
 }
 
 function Invoke-Server {
-    param([string]$JavaExe, [string[]]$LaunchArgs)
+    # -WithoutMod is the S10 run: the release JAR was removed after the scenarios wrote incidents.
+    param([string]$JavaExe, [string[]]$LaunchArgs, [switch]$WithoutMod)
     $stdout = Join-Path $serverDir 'smoke.stdout.log'
     $stderr = Join-Path $serverDir 'smoke.stderr.log'
     Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
 
-    Write-Host "Starting the $BandId/$Loader dedicated server with the release JAR"
+    if ($WithoutMod) { Write-Host "Starting the $BandId/$Loader dedicated server again without the release JAR" }
+    else { Write-Host "Starting the $BandId/$Loader dedicated server with the release JAR" }
     $startArgs = @{
         FilePath               = $JavaExe
         ArgumentList           = $LaunchArgs
@@ -196,7 +199,7 @@ function Invoke-Server {
     $started = $false
     $stopSent = $false
     $rconFailures = 0
-    $scenariosDone = [bool]$SkipScenarios
+    $scenariosDone = [bool]$SkipScenarios -and -not $WithoutMod
     $scenarioError = $null
     try {
         while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
@@ -204,7 +207,10 @@ function Invoke-Server {
             $started = $log -match 'Done \([^)]+\)! For help'
             if ($started -and -not $scenariosDone) {
                 $scenariosDone = $true
-                try { Invoke-SmokeScenarios -ServerProcess $process -Deadline $deadline } catch { $scenarioError = $_.Exception.Message }
+                try {
+                    if ($WithoutMod) { Invoke-RemovedModCheck -ServerProcess $process -Deadline $deadline }
+                    else { Invoke-SmokeScenarios -ServerProcess $process -Deadline $deadline }
+                } catch { $scenarioError = $_.Exception.Message }
             }
             if ($started -and -not $stopSent) {
                 # The RCON listener can open a little after the "Done" line.
@@ -227,6 +233,13 @@ function Invoke-Server {
     if (-not $started) { throw "$BandId/$Loader never reached 'Done! For help'.$([Environment]::NewLine)$tail" }
     if ($scenarioError) { throw $scenarioError }
     $loadedLine = ($log -split "`r?`n" | Where-Object { $_.Contains($expectedLine) } | Select-Object -First 1)
+    if ($WithoutMod) {
+        if ($loadedLine) { throw "$BandId/$Loader still loaded the mod after its JAR was removed." }
+        if (-not $stopSent) { throw "$BandId/$Loader could not be stopped over RCON." }
+        if ($log -notmatch 'Stopping (the )?server') { throw "$BandId/$Loader did not log a clean shutdown." }
+        Write-Host "$BandId/$Loader OK: the world loaded and a player joined without the mod (S10)." -ForegroundColor Green
+        return
+    }
     if (-not $loadedLine) { throw "$BandId/$Loader started, but the log has no '$expectedLine' line." }
     if (-not $stopSent) { throw "$BandId/$Loader could not be stopped over RCON." }
     if ($log -notmatch 'Stopping (the )?server') { throw "$BandId/$Loader did not log a clean shutdown." }
@@ -279,4 +292,14 @@ if ($Loader -eq 'fabric') {
 } else {
     $launchArgs = Get-InstallerLaunchArgs
 }
+if (-not $SkipScenarios) {
+    # Logs the time the mod's hooks take on each normal join (SPEC.md scenario S12).
+    $launchArgs = @('-Dplayerdatarescue.timing=true') + $launchArgs
+}
 Invoke-Server -JavaExe $javaExe -LaunchArgs $launchArgs
+if (-not $SkipScenarios) {
+    Remove-Item -LiteralPath (Join-Path (Join-Path $serverDir 'mods') (Split-Path -Leaf $modJar)) -Force
+    # The second run must not read the "Done" line of the first one; CI uploads both logs.
+    Move-Item -LiteralPath (Join-Path $serverDir 'logs/latest.log') -Destination (Join-Path $serverDir 'logs/with-mod.log') -Force
+    Invoke-Server -JavaExe $javaExe -LaunchArgs $launchArgs -WithoutMod
+}

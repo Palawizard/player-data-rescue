@@ -21,7 +21,8 @@ import java.util.zip.Inflater;
 /**
  * Dev-only headless client for the smoke tests: logs in to an offline-mode server as a vanilla
  * client, joins the world, answers keep-alives and teleports, reports its position after each
- * teleport and then every second, and reports how the join ended. It never ships in a mod JAR.
+ * teleport and then every second, prints the system messages it receives, and reports how the join
+ * ended. It never ships in a mod JAR.
  * Packet ids and layouts come from each version's decompiled sources and data reports (see the
  * profiles below and docs/TESTING.md).
  *
@@ -78,6 +79,7 @@ public final class JoinBot {
                     Map.entry("playLogin", 40),
                     Map.entry("playPing", 50),
                     Map.entry("playPlayerPosition", 60),
+                    Map.entry("playSystemChat", 100),
                     Map.entry("playAcceptTeleportationOut", 0),
                     Map.entry("playClientInformationOut", 8),
                     Map.entry("playKeepAliveOut", 18),
@@ -120,6 +122,7 @@ public final class JoinBot {
                     Map.entry("playPing", 53),
                     Map.entry("playPlayerPosition", 64),
                     Map.entry("playStartConfiguration", 105),
+                    Map.entry("playSystemChat", 108),
                     Map.entry("playAcceptTeleportationOut", 0),
                     Map.entry("playChunkBatchReceivedOut", 8),
                     Map.entry("playClientInformationOut", 10),
@@ -165,6 +168,7 @@ public final class JoinBot {
                     Map.entry("playPing", 62),
                     Map.entry("playPlayerPosition", 73),
                     Map.entry("playStartConfiguration", 120),
+                    Map.entry("playSystemChat", 124),
                     Map.entry("playAcceptTeleportationOut", 0),
                     Map.entry("playChunkBatchReceivedOut", 11),
                     Map.entry("playClientInformationOut", 14),
@@ -392,6 +396,10 @@ public final class JoinBot {
             }
         } else if (id == profile.id("playPlayerPosition")) {
             acceptTeleport(packet);
+        } else if (id == profile.id("playSystemChat")) {
+            // A vanilla client fails to decode a component it does not know; this one prints the
+            // component as received, so the smoke test can check the text of the mod's messages.
+            log("chat: " + (profile.configurationPhase() ? readComponent(packet) : readString(packet)));
         } else if (id == profile.id("playChunkBatchFinished")) {
             send(new Buf(profile.id("playChunkBatchReceivedOut")).f32(64.0f));
         } else if (id == profile.id("playStartConfiguration")) {
