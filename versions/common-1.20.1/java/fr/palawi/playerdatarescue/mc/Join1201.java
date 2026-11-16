@@ -67,7 +67,14 @@ public final class Join1201 implements GameJoin {
     @Override
     public CoreValues.Spawn spawn() {
         BlockPos pos = server.overworld().getSharedSpawnPos();
-        return new CoreValues.Spawn(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, "minecraft:overworld");
+        return new CoreValues.Spawn(
+                pos.getX() + 0.5,
+                pos.getY(),
+                pos.getZ() + 0.5,
+                "minecraft:overworld",
+                server.levelKeys().stream()
+                        .map(key -> key.location().toString())
+                        .collect(java.util.stream.Collectors.toSet()));
     }
 
     @Override

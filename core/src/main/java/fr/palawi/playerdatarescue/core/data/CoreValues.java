@@ -7,6 +7,7 @@ import fr.palawi.playerdatarescue.core.nbt.NbtValue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * The core section (SPEC.md section 4.1): invalid values are set to safe defaults, never set
@@ -17,14 +18,34 @@ import java.util.Optional;
 public final class CoreValues {
     private CoreValues() {}
 
-    /** A position to use instead of an invalid one: the world spawn, given by the band. */
-    public record Spawn(double x, double y, double z, String dimension) {}
+    /**
+     * The world spawn, given by the band: where a player goes when their position is not valid or
+     * their dimension is not on this server. {@code dimensions} lists the server's dimensions;
+     * when empty, the dimension is not checked.
+     */
+    public record Spawn(double x, double y, double z, String dimension, Set<String> dimensions) {
+        public Spawn {
+            dimensions = Set.copyOf(dimensions);
+        }
+
+        public Spawn(double x, double y, double z, String dimension) {
+            this(x, y, z, dimension, Set.of());
+        }
+    }
 
     /** Fixes the values in place and returns one line per change, for the report. */
     public static List<String> clamp(NbtCompound root, Spawn spawn) {
         List<String> changes = new ArrayList<>();
         if (!finiteDoubles(root.get("Pos"), 3)) {
             changes.add("Position " + describe(root.get("Pos")) + " was not valid; set to the world spawn");
+            root.put("Pos", doubles(spawn.x(), spawn.y(), spawn.z()));
+            root.put("Dimension", NbtValue.ofString(spawn.dimension()));
+        }
+        Optional<String> dimension = root.string("Dimension");
+        if (dimension.isPresent()
+                && !spawn.dimensions().isEmpty()
+                && !spawn.dimensions().contains(dimension.get())) {
+            changes.add("Dimension " + dimension.get() + " is not on this server; set to the world spawn");
             root.put("Pos", doubles(spawn.x(), spawn.y(), spawn.z()));
             root.put("Dimension", NbtValue.ofString(spawn.dimension()));
         }

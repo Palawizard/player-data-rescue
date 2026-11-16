@@ -13,6 +13,12 @@ import org.junit.jupiter.api.Test;
 
 class CoreValuesTest {
     private static final CoreValues.Spawn SPAWN = new CoreValues.Spawn(8.5, 64, -3.5, "minecraft:overworld");
+    private static final CoreValues.Spawn SPAWN_WITH_DIMENSIONS = new CoreValues.Spawn(
+            8.5,
+            64,
+            -3.5,
+            "minecraft:overworld",
+            Set.of("minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"));
 
     @Test
     void theMinimalProfileKeepsPositionAndGameModeWithFullHealthAndFood() throws Exception {
@@ -52,6 +58,33 @@ class CoreValuesTest {
                         .map(e -> ((NbtValue) e).number().doubleValue())
                         .toList());
         assertEquals("minecraft:overworld", root.string("Dimension").orElseThrow());
+    }
+
+    @Test
+    void aDimensionThatIsNotOnTheServerGoesToTheWorldSpawn() throws Exception {
+        // TpBot joined in the overworld and no command changed its dimension (fixtures/README.md); it is
+        // moved to a dimension from a removed mod, as when the mod that added the dimension is gone.
+        NbtCompound root = Fixtures.read("1.21.1-fabric/TpBot.dat");
+        root.put("Dimension", NbtValue.ofString("pdrtest_removed:void"));
+
+        List<String> changes = CoreValues.clamp(root, SPAWN_WITH_DIMENSIONS);
+
+        assertEquals(List.of("Dimension pdrtest_removed:void is not on this server; set to the world spawn"), changes);
+        assertEquals(
+                List.of(8.5, 64.0, -3.5),
+                root.list("Pos").orElseThrow().elements().stream()
+                        .map(e -> ((NbtValue) e).number().doubleValue())
+                        .toList());
+        assertEquals("minecraft:overworld", root.string("Dimension").orElseThrow());
+    }
+
+    @Test
+    void aDimensionOnTheServerIsLeftAlone() throws Exception {
+        NbtCompound root = Fixtures.read("1.21.1-fabric/TpBot.dat");
+        NbtCompound before = root.copy();
+
+        assertEquals(List.of(), CoreValues.clamp(root, SPAWN_WITH_DIMENSIONS));
+        assertEquals(before, root);
     }
 
     @Test
