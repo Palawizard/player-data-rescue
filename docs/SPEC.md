@@ -50,7 +50,7 @@ A player is rescued at most once per join attempt.
 
 | Section | Granularity | Notes |
 |---|---|---|
-| Core | whole | UUID, position, rotation, dimension, game mode, health, food, saturation, XP, air, fire, fall distance, abilities, spawn point. Invalid values are clamped to safe defaults and never quarantined. An unknown dimension sends P to the overworld spawn. |
+| Core | whole | UUID, position, rotation, dimension, game mode, health, food, saturation, XP, air, fire, fall distance, abilities, spawn point. Invalid values are clamped to safe defaults and never quarantined. An unknown dimension sends P to the overworld spawn (1.20.1 and 1.21.1; on 26.3 the spawn is chosen during configuration, before the rescue). |
 | Inventory | per slot | Main inventory, armor, offhand, and equipment slots on versions that store them separately. |
 | Ender chest | per slot | |
 | Effects | per effect | |
@@ -150,8 +150,8 @@ Player arguments accept online players. For `list`, `show` and `export`, they al
 | `notifyOperators` | `true` | Summary to online operators. |
 | `commandPermissionLevel` | `3` | Permission level for `/pdrescue`. |
 | `maxIncidentsPerPlayer` | `20` | Retention for fully handled incidents. |
-| `useDatOldFallback` | `true` | Try the `_old` file when the main file cannot be parsed. |
-| `rescuePlacementFailures` | `true` | Handle T3. |
+| `useDatOldFallback` | `true` | Try the `_old` file when the main file cannot be parsed. On 1.21.1 and 26.3 the game itself reads `.dat_old` whatever this setting says (checked in their sources), and the report says so; on 1.20.1 the mod does it. |
+| `rescuePlacementFailures` | `true` | Handle T3. When `false`, the player is still disconnected as without the mod, but a half-placed player is removed without being saved, so the data on disk stays the original. |
 | `recurringThreshold` | `3` | Joins or players before a failure becomes a recurring issue. |
 | `logFullStackTraces` | `false` | Put full traces in the log. They are always in `report.txt`. |
 

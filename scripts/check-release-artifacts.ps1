@@ -8,7 +8,7 @@ param(
 )
 
 # Checks that every band and loader produced exactly one release JAR with its loader
-# metadata, the core classes and the loader entrypoint, and that no metadata
+# metadata, the core classes, the loader entrypoint, the mixin config and the language file, and that no metadata
 # placeholder was left unexpanded. It also refuses any dev-only test mod or join bot file.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
@@ -56,7 +56,10 @@ foreach ($band in (Get-VersionMatrix).bands) {
         try {
             $jar = Get-ReleaseJar $band.loaders.$loaderName
             $metadataPath = Get-MetadataPath $loaderName
-            $required = @($metadataPath, "$packagePath/core/ModInfo.class", (Get-EntrypointClass $loaderName))
+            $required = @($metadataPath, "$packagePath/core/ModInfo.class", (Get-EntrypointClass $loaderName),
+                "$modId.mixins.json", "assets/$modId/lang/en_us.json")
+            # Forge 47 runs on SRG names: its mixins need the refmap (ADR-PDR-009).
+            if ($loaderName -eq 'forge' -and $band.compileTarget -eq '1.20.1') { $required += "$modId.refmap.json" }
             $zip = [System.IO.Compression.ZipFile]::OpenRead($jar.FullName)
             try {
                 $entries = @($zip.Entries | ForEach-Object { $_.FullName })

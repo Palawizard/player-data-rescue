@@ -94,6 +94,14 @@ jobs:
           cd core
           ./gradlew -p ../testmod spotlessCheck --no-daemon
 
+      - name: Check formatting of the code shared by the bands
+        run: |
+          gradle_java=$(jq -r '.core.gradleJava' versions/version-matrix.json)
+          JAVA_HOME="$(printenv "JAVA_HOME_${gradle_java}_X64")" || { echo "No JDK ${gradle_java} set up."; exit 1; }
+          export JAVA_HOME
+          cd core
+          ./gradlew -p ../versions spotlessCheck --no-daemon
+
   bands:
     name: List bands
     runs-on: ubuntu-latest
@@ -163,6 +171,8 @@ jobs:
             build/prod-smoke/*/*.log
             build/prod-smoke/*/crash-reports/
             build/prod-smoke/*/smokeworld/playerdata/
+            build/prod-smoke/*/smokeworld/players/data/
+            build/prod-smoke/*/smokeworld/playerdatarescue/
           if-no-files-found: ignore
 
       - name: Upload release JAR

@@ -16,3 +16,9 @@ repositories {
 dependencies {
     implementation minecraft.dependency("net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}")
 }
+
+tasks.named('jar', Jar) {
+    manifest {
+        attributes('MixinConfigs': 'playerdatarescue.mixins.json')
+    }
+}

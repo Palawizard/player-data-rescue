@@ -1,0 +1,7 @@
+{
+  "playerdatarescue.player.rescued": "Some of your saved data could not be loaded and was set aside. An admin can restore it.",
+  "playerdatarescue.player.previous_save": "Your latest save could not be read, so you joined with the save before it.",
+  "playerdatarescue.player.unreadable": "Your saved data could not be read, so you joined as a new player. An admin has a copy of the old files.",
+  "playerdatarescue.operator.rescued": "[Player Data Rescue] %s joined after a rescue: %s set aside. Most likely: %s. Report: %s",
+  "playerdatarescue.operator.diagnosis": "[Player Data Rescue] %s could not join, and the saved data is not the cause. Most likely: %s. Report: %s"
+}

@@ -14,6 +14,9 @@ repositories {
 }
 
 dependencies {
+    // Bundled with Minecraft (ADR-003, ADR-005); 2.10 is the oldest one, shipped with 1.20.1.
+    compileOnly 'com.google.code.gson:gson:2.10'
+    testImplementation 'com.google.code.gson:gson:2.10'
     testImplementation platform('org.junit:junit-bom:6.1.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

@@ -1,6 +1,7 @@
 plugins {
     id 'java-library'
     id 'net.minecraftforge.gradle' version '6.0.54'
+    id 'org.spongepowered.mixin' version '0.7.38'
     id 'com.diffplug.spotless' version '8.11.0'
 }
 
@@ -14,11 +15,26 @@ minecraft {
 
 repositories {
     maven { url = 'https://maven.minecraftforge.net/' }
+    maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
     mavenCentral()
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+// Forge 47 runs on SRG names, so the mixins need a refmap from the Mojang names in the source to
+// SRG (ADR-PDR-009). The mixin library itself comes with Forge. The config is declared in the
+// release JAR's manifest only: MixinGradle's own 'config' would also put it in the test mod JAR.
+mixin {
+    add sourceSets.main, 'playerdatarescue.refmap.json'
+}
+
+tasks.named('jar', Jar) {
+    manifest {
+        attributes('MixinConfigs': 'playerdatarescue.mixins.json')
+    }
 }
 
 reobf {

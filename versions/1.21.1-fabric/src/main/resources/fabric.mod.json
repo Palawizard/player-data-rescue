@@ -10,6 +10,7 @@
   "entrypoints": {
     "main": ["fr.palawi.playerdatarescue.fabric.PlayerDataRescueFabric"]
   },
+  "mixins": ["playerdatarescue.mixins.json"],
   "depends": {
     "fabricloader": "${loader_version_range}",
     "minecraft": "${minecraft_version_range}"
