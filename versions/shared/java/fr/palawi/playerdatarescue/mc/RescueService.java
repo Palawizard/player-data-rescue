@@ -168,6 +168,7 @@ public final class RescueService {
         } catch (IOException | RuntimeException e) {
             if (result.outcome() == Outcome.NOT_DATA_RELATED) {
                 source.restore();
+                STATE.markNotDataRelated(join.id());
                 throw e;
             }
             // The player is already in the world with the rescued data: keep them in.
