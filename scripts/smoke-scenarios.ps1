@@ -220,8 +220,9 @@ function Invoke-TeleportCheck {
         while (((Get-Date) - $start).TotalSeconds -lt 24) {
             Start-Sleep -Seconds 2
             Assert-ScenarioTime
-            $elapsed = [int]((Get-Date) - $start).TotalSeconds
-            if ($elapsed -lt 8) { continue }
+            $seconds = ((Get-Date) - $start).TotalSeconds
+            if ($seconds -lt 8) { continue }
+            $elapsed = [int][Math]::Floor($seconds)
             $checks++
             # A command that fails under execute answers nothing over RCON.
             $answer = (Invoke-RconCommand -Command "execute at $player if loaded ~ ~-1 ~").Trim()
