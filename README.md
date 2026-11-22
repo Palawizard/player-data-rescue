@@ -8,8 +8,6 @@
 
 In development. There is no release yet.
 
----
-
 ## What it does
 
 After a mod is updated, removed or rolled back, a player's save can hold mod data that throws while it loads, for example a Forge capability or a Fabric mod's own key. A save can also be truncated after a crash. Minecraft then refuses the connection with "Invalid player data", or starts the player from scratch, and the usual fix is to delete the player's file, which wipes their inventory and position.
@@ -22,15 +20,11 @@ When the failure does not come from the saved data at all (a mod that crashes on
 - Adds no blocks, items or registry entries, so it can be added to or removed from an existing world.
 - No dependencies beyond the loader.
 
----
-
 ## Installation
 
 1. Download the JAR that matches your Minecraft version band and loader from the releases page (see [docs/SUPPORT.md](docs/SUPPORT.md)).
 2. Put it in the server's `mods` folder.
 3. Start the server once to create `config/playerdatarescue.json`.
-
----
 
 ## Usage
 
@@ -46,8 +40,6 @@ Rescues happen automatically. Each rescue writes a folder under `<world>/playerd
 
 Commands require permission level 3 by default. The exact behaviour is in [docs/SPEC.md](docs/SPEC.md).
 
----
-
 ## Documentation
 
 - [docs/SPEC.md](docs/SPEC.md): behaviour and acceptance scenarios
@@ -56,8 +48,6 @@ Commands require permission level 3 by default. The exact behaviour is in [docs/
 - [docs/TESTING.md](docs/TESTING.md): test strategy
 - [docs/DECISIONS.md](docs/DECISIONS.md): decision records
 - [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/release-checklist.md](docs/release-checklist.md)
-
----
 
 ## License
 
