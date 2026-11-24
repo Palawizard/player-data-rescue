@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import fr.palawi.playerdatarescue.mc.HeldPackets;
 import fr.palawi.playerdatarescue.mc.Join1211;
 import fr.palawi.playerdatarescue.mc.RescueService;
+import fr.palawi.playerdatarescue.mc.Timing;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.configuration.ServerboundFinishConfigurationPacket;
 import net.minecraft.server.MinecraftServer;
@@ -46,7 +47,9 @@ abstract class NeoForgeConfigurationMixin extends ServerCommonPacketListenerImpl
                             target =
                                     "Lnet/minecraft/server/players/PlayerList;placeNewPlayer(Lnet/minecraft/network/Connection;Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/server/network/CommonListenerCookie;)V"))
     private void playerdatarescue$holdPackets(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
+        long start = Timing.start();
         HeldPackets.hold(connection);
+        Timing.stop(gameProfile.getId(), start);
     }
 
     @Inject(
@@ -58,7 +61,9 @@ abstract class NeoForgeConfigurationMixin extends ServerCommonPacketListenerImpl
                                     "Lnet/minecraft/server/players/PlayerList;placeNewPlayer(Lnet/minecraft/network/Connection;Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/server/network/CommonListenerCookie;)V",
                             shift = At.Shift.AFTER))
     private void playerdatarescue$releasePackets(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
+        long start = Timing.start();
         HeldPackets.release(connection);
+        Timing.stop(gameProfile.getId(), start);
     }
 
     @Inject(
@@ -75,7 +80,9 @@ abstract class NeoForgeConfigurationMixin extends ServerCommonPacketListenerImpl
 
     @Inject(method = "handleConfigurationFinished", at = @At("RETURN"))
     private void playerdatarescue$joined(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
+        long start = Timing.start();
         HeldPackets.release(connection);
+        Timing.stop(gameProfile.getId(), start);
         RescueService.onLoginFinished(join());
     }
 

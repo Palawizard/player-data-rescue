@@ -39,7 +39,7 @@ abstract class ConnectionMixin implements HeldPackets {
             cancellable = true)
     private void playerdatarescue$keepBack(
             Packet<?> packet, PacketSendListener listener, boolean flush, CallbackInfo ci) {
-        // Every packet of the server comes here: when nothing is held, one volatile read.
+        // Every packet of the server comes here: when nothing is held, this callback and one volatile read.
         if (playerdatarescue$held == null) {
             return;
         }

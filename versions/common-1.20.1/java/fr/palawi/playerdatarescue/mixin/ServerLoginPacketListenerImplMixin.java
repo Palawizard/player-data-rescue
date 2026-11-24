@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import fr.palawi.playerdatarescue.mc.HeldPackets;
 import fr.palawi.playerdatarescue.mc.Join1201;
 import fr.palawi.playerdatarescue.mc.RescueService;
+import fr.palawi.playerdatarescue.mc.Timing;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -43,7 +44,9 @@ abstract class ServerLoginPacketListenerImplMixin {
                             target =
                                     "Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;placeNewPlayer(Lnet/minecraft/server/level/ServerPlayer;)V"))
     private void playerdatarescue$holdPackets(CallbackInfo ci) {
+        long start = Timing.start();
         HeldPackets.hold(connection);
+        Timing.stop(gameProfile.getId(), start);
     }
 
     @Inject(
@@ -55,7 +58,9 @@ abstract class ServerLoginPacketListenerImplMixin {
                                     "Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;placeNewPlayer(Lnet/minecraft/server/level/ServerPlayer;)V",
                             shift = At.Shift.AFTER))
     private void playerdatarescue$releasePackets(CallbackInfo ci) {
+        long start = Timing.start();
         HeldPackets.release(connection);
+        Timing.stop(gameProfile.getId(), start);
     }
 
     @Inject(
@@ -71,7 +76,9 @@ abstract class ServerLoginPacketListenerImplMixin {
 
     @Inject(method = "handleAcceptedLogin", at = @At("RETURN"))
     private void playerdatarescue$joined(CallbackInfo ci) {
+        long start = Timing.start();
         HeldPackets.release(connection);
+        Timing.stop(gameProfile.getId(), start);
         RescueService.onLoginFinished(new Join1201(server, connection, gameProfile));
     }
 }
