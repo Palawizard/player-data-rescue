@@ -4,6 +4,7 @@ import fr.palawi.playerdatarescue.core.data.CoreValues;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
 import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
+import fr.palawi.playerdatarescue.core.recurring.RecurringIssues;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import java.nio.file.Path;
 import java.util.List;
@@ -52,6 +53,12 @@ public interface GameJoin {
      * (SPEC.md section 7.1). Each stack is decoded by the game.
      */
     void dropAtFeet(List<NbtCompound> stacks);
+
+    /**
+     * Tells every online operator except the joining player about a recurring issue; returns how
+     * many were told.
+     */
+    int tellOperatorsRecurring(RecurringIssues.Issue issue, String file, int permissionLevel);
 
     /** Tells every online operator except the joining player. */
     void tellOperators(Incident incident, String folder, int permissionLevel);

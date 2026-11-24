@@ -209,4 +209,21 @@ public final class Join263 implements GameJoin {
             }
         }
     }
+
+    @Override
+    public int tellOperatorsRecurring(
+            fr.palawi.playerdatarescue.core.recurring.RecurringIssues.Issue issue, String file, int permissionLevel) {
+        int told = 0;
+        for (ServerPlayer operator : server.getPlayerList().getPlayers()) {
+            if (!operator.getUUID().equals(id())
+                    && server.getProfilePermissions(operator.nameAndId())
+                                    .level()
+                                    .id()
+                            >= permissionLevel) {
+                operator.sendSystemMessage(Notices.recurring(issue, file));
+                told++;
+            }
+        }
+        return told;
+    }
 }

@@ -182,6 +182,11 @@ public final class RescueService {
             throw e;
         }
         RestoreService.rescued(join, result, folder);
+        RecurringService.Split recurring = RecurringService.split(join, result);
+        result = recurring.rest();
+        if (recurring.onlyRecurring()) {
+            return rescuedRecurring(join, store, folder, recurring);
+        }
         Incident incident;
         try {
             incident = IncidentRecorder.record(
@@ -238,6 +243,31 @@ public final class RescueService {
                 result.attempts(),
                 folder.resolve("report.txt"));
         notify(join, incident, shown, result.outcome());
+        RecurringService.tellOperators(join, recurring);
+        return true;
+    }
+
+    /**
+     * Every unit this join set aside is a recurring issue: its record holds the payload, so no new
+     * incident is kept (SPEC.md section 4.4). The player is in with everything else.
+     */
+    private static boolean rescuedRecurring(
+            GameJoin join, IncidentStore store, Path folder, RecurringService.Split recurring) {
+        try {
+            join.save();
+            store.discard(folder);
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("[{}] {} was rescued, but saving them right away failed", ModInfo.MOD_ID, join.name(), e);
+        }
+        LOGGER.warn(
+                "[{}] rescued {}: {} set aside again (recurring issue)",
+                ModInfo.MOD_ID,
+                join.name(),
+                String.join(", ", recurring.recurring()));
+        if (config.notifyPlayer()) {
+            join.tellPlayer(Outcome.RESCUED);
+        }
+        RecurringService.tellOperators(join, recurring);
         return true;
     }
 
@@ -347,6 +377,7 @@ public final class RescueService {
         }
         if (join.placed()) {
             RestoreService.joined(join);
+            RecurringService.joined(join);
         }
         if (pending == null || !join.placed()) {
             return;
