@@ -1,7 +1,8 @@
 # Real game client checks, dot-sourced by prod-smoke.ps1 (-RealClient). The client is the real
 # Minecraft client, started by the portablemc launcher with an offline account (ADR-PDR-011). It
-# opens a game window, so these checks run on a desktop, never in CI. Works on Windows PowerShell
-# 5.1 and on PowerShell 7. Uses from common.ps1: $ProjectRoot and $OnWindows; from prod-smoke.ps1:
+# opens a game window, so these checks run on a desktop, never in CI. Written for Windows
+# PowerShell 5.1 and PowerShell 7 (check-powershell-compat.ps1), run so far with PowerShell 7 on
+# Linux. Uses from common.ps1: $ProjectRoot and $OnWindows; from prod-smoke.ps1:
 # $javaExe, $ServerPort, $BandId, $Loader and $band.
 
 $PortableMcVersion = '5.0.6'
@@ -301,7 +302,7 @@ function Invoke-RealClientDisconnect {
             } elseif (-not $logsReason) {
                 Start-Sleep -Seconds 5
             }
-            $problems += @(Test-RealClientHealthy -Client $client | Where-Object { $_ -notmatch 'Client disconnected with reason|Disconnecting from server|Lost connection' })
+            $problems += @((Test-RealClientHealthy -Client $client) | Where-Object { $_ -notmatch 'Client disconnected with reason|Disconnecting from server|Lost connection' })
         } finally {
             $closed = Close-RealClient -Client $client
         }
