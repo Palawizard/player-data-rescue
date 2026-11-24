@@ -16,7 +16,8 @@ param(
 # SPEC.md scenario S8 with the real game client: the singleplayer host's own data holds the test
 # attachment, and the integrated server must rescue it as a dedicated server would. Needs the
 # band built (release JAR and test mod), a desktop session and the portablemc launcher
-# (ADR-PDR-011). Works on Windows PowerShell 5.1 and on PowerShell 7.
+# (ADR-PDR-011). Written for Windows PowerShell 5.1 and PowerShell 7, run so far with
+# PowerShell 7 on Linux.
 #
 # 1. The band's dedicated server makes an empty world (prod-smoke.ps1 -SkipScenarios).
 # 2. The client opens it once with both mods: the host player is created and its data, with
@@ -87,7 +88,7 @@ function Invoke-WorldRun {
     try {
         $reached = Wait-RealClientLog -Client $client -Pattern $Until -Seconds 300
         if ($reached) { Start-Sleep -Seconds $StaySeconds }
-        $health = @(Test-RealClientHealthy -Client $client)
+        $health = Test-RealClientHealthy -Client $client
     } finally {
         $closed = Close-RealClient -Client $client
     }
