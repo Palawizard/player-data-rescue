@@ -277,7 +277,7 @@ if ($RealClient) {
     $realClientContext = @{
         Launcher = Get-PortableMc -Launcher $Launcher
         Root     = Get-ClientRoot -ClientRoot $ClientRoot
-        Version  = Get-ClientVersion -Band $band -LoaderConfig $loaderConfig -Loader $Loader -Vanilla
+        Version  = Get-ClientVersion -Band $band
         RunRoot  = Join-Path $ProjectRoot "build/real-client/runs/$BandId-$Loader"
     }
     # Each client can take minutes to start the first time, while it downloads its version.
