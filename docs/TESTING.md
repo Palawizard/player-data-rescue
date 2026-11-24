@@ -66,7 +66,7 @@ Observed on 2026-11-16 on every Tier A band (Forge and Fabric 1.20.1; Forge, Fab
 | S6 | Truncated `.dat` and `.dat_old` | joined as a new player; one incident, T2, `unreadable_file`, both files in `original/` | same | same |
 | S11 | Placement throws for any data, saved data present | invalid at both joins; one incident at the first: T3, the half-placed player removed, the minimal profile placed and failing on the test mod, `not_data_related`, suspect pdrtest, original file back; the second join tries no rescue | same | same |
 | S11 (new player) | Placement throws, no saved data | invalid; one incident, T3, `not_data_related` with no original files, suspect pdrtest | same | same |
-| S12 | Valid data | joined, no incident; normal path 2.9 to 9.1 µs (Normal path cost below) | same | same |
+| S12 | Valid data | joined, no incident; normal path under 100 µs on 2026-11-24, with the packet hold (Normal path cost below) | same | same |
 | S13 | Attachment saved in a form it cannot read back | joined at both joins; one incident per join (recurring issues are M3) | same | joined, attachment lost, no incident (T4) |
 | S15 (2026-11-24) | Placement fails only when the data holds the test attachment | joined with one login packet; one incident, T3, `minimal_profile`, `section.ForgeCaps` set aside with the other sections, suspect pdrtest | joined; same with `key.pdrtest:broken` | joined; same with `section.neoforge:attachments` |
 
@@ -78,15 +78,17 @@ After the scenarios, the server is stopped and started again without the release
 
 ## Normal path cost (S12)
 
-With `-Dplayerdatarescue.timing=true`, which `prod-smoke.ps1` passes to the server when it runs the scenarios, the mod adds up the time spent in its hooks during a join, measured with `System.nanoTime()` around the body of each hook, and logs it when the login handler returns: `normal path for S12Bot: <µs> us in <n> hook call(s)`. Without the property, the timing costs one static field read per hook; the hooks themselves still run. S12 fails above 1000 µs. The hooks on a normal join are the login handler's return hook on every band, and on 1.20.1 also the read hook of `PlayerDataStorage#load`; the placement guard and the unreadable file hook only run on a failure. The hold and the release of the placement's packets are timed too (two more hook calls). Each packet the server sends also goes through the hold check of `Connection#send`, which is left out of the measure: when nothing is held it is a callback object and one volatile field read, and timing it would cost more than it does.
+With `-Dplayerdatarescue.timing=true`, which `prod-smoke.ps1` passes to the server when it runs the scenarios, the mod adds up the time spent in its hooks during a join, measured with `System.nanoTime()` around the body of each hook, and logs it when the login handler returns: `normal path for S12Bot: <µs> us in <n> hook call(s)`. Without the property, the timing costs one static field read per hook; the hooks themselves still run. S12 fails above 1000 µs. The hooks on a normal join are the login handler's return hook on every band, and on 1.20.1 also the read hook of `PlayerDataStorage#load`; the placement guard and the unreadable file hook only run on a failure. The hold and the two releases of the placement's packets are timed too (three more hook calls). A release sends the packets the game queued during the placement, so its time includes the game's own sends (chunks and entities in view, more with a larger view distance): the measure is an upper bound of the mod's cost, which is a list entry per held packet and a second pass through `Connection#send`. Each packet the server sends also goes through the hold check of `Connection#send`, which is left out of the measure: when nothing is held it is a callback object and one volatile field read, and timing it would cost more than it does.
 
-Measured on 2026-11-16 in the production-JAR smoke test (`./scripts/build-all-version-bands.ps1`, Linux container, 4 cores), second join of `S12Bot`, whose data was saved by its first join:
+Measured on 2026-11-24 in the production-JAR smoke test (`./scripts/prod-smoke.ps1 -SkipBuild -RealClient`, one band at a time, Linux laptop), second join of `S12Bot`, whose data was saved by its first join:
 
 | Band | Forge | Fabric | NeoForge |
 |---|---|---|---|
-| 1.20.1 (2 hook calls) | 9.1 µs | 8.6 µs | |
-| 1.21.1 (1 hook call) | 2.9 µs | 7.1 µs | 4.7 µs |
-| 26.3 (1 hook call) | 7.0 µs | 4.7 µs | 6.1 µs |
+| 1.20.1 (5 hook calls) | 54.9 µs | 77.6 µs | |
+| 1.21.1 (4 hook calls) | 15.6 µs | 28.4 µs | 82.1 µs |
+| 26.3 (4 hook calls) | 18.5 µs | 24.7 µs | 35.0 µs |
+
+Before the packet hold (2026-11-16, Linux container, 4 cores, 2 hook calls on 1.20.1 and 1 elsewhere), the same join took 2.9 to 9.1 µs. The difference is mostly the release, which sends the game's own packets of the placement.
 
 The measure covers the hook bodies only, not the time the game spends loading the player, which the mod does not change on a normal join. These hooks run on a cold JIT at that point, so later joins are likely cheaper.
 
@@ -108,13 +110,13 @@ Dedicated server, vanilla client of the band: `./scripts/prod-smoke.ps1 -BandId 
 
 - S2 (`S2Client`, Forge and Fabric; on NeoForge the attachment is skipped by the game, T4): the client must show the player message.
 - S15 (`S15Client`): the placement fails, and the minimal profile is placed on the same connection. The client must stay connected for 30 seconds after the rescue, show a chat message sent after that time, fall back when RCON lifts it 3 blocks (the server sees its height drop within 5 seconds), be in the player list, show the player message, and log no disconnect, packet error or crash.
-- S11 (`S11Client`): every placement fails, so the client never gets a login packet, only the game's disconnect. The client must show "Invalid player data" and log no packet error or crash.
+- S11 (`S11Client`), two joins: at the first every placement fails, so the client never gets a login packet, only the game's disconnect; at the second no rescue is tried, and the disconnect lets out the packets the connection held. Each time the client must show "Invalid player data" and log no packet error or crash. The 1.20.1 client shows the reason without logging it, so on 1.20.1 the server's `lost connection: Invalid player data` line is the proof (the screen was checked by eye on Forge 1.20.1 on 2026-11-24).
 
 S2 and S15 check the fall. A client that got a second login packet passed every other check but this one: its player stayed in the air, and shook on screen (ARCHITECTURE.md, Cleanup after a failed placement).
 
-`OpClient` must show the operator notice of each rescue. Every client is closed through its window, as a player closes it.
+`OpClient` must show the operator notice of each rescue. Every client is closed through its window, as a player closes it (on Windows and Hyprland; elsewhere the script sends the game `SIGTERM`).
 
-Observed on 2026-11-24 with portablemc 5.0.6, on every Tier A band (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3): S15 placed the player twice on the server and once for the client, the client stayed 30 seconds, fell 3 blocks back after the lift, showed the chat marker and the player message, and logged no error; S2 passed on Forge and Fabric; `OpClient` showed every operator notice; S10 passed after the run. Before the packet hold, on Fabric 1.21.1, S15 passed every other check while a lift by RCON showed its player stuck in the air.
+Observed on 2026-11-24 with portablemc 5.0.6, on every Tier A band (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3), on the code of this change: S15 placed the player twice on the server, its join client got one login packet, and the vanilla client stayed 30 seconds, fell 3 blocks back after the lift, showed the chat marker and the player message, and logged no error (the vanilla client's own count of login packets is not read: the fall is its proof); S11 disconnected the vanilla client twice with "Invalid player data", shown in its log on 1.21.1 and 26.3, and no packet error; S2 passed on Forge and Fabric; `OpClient` showed every operator notice; S10 passed after the run. Before the packet hold, on Fabric 1.21.1, S15 passed every other check while a lift by RCON showed its player stuck in the air.
 
 ## Manual check: S8, singleplayer host
 

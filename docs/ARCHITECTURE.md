@@ -92,7 +92,7 @@ Each attempt of a rescue builds a new player:
 
 ### Cleanup after a failed placement (T3)
 
-When placement throws after the game added the player (a mod's login code, or the test mod at the end of `placeNewPlayer`), the player is in the player list and the level, and the connection's listener is the new game listener. The client got nothing: the connection holds every packet a placement sends until the placement returns (`HeldPackets`, implemented on `Connection` by each band's `ConnectionMixin`). Before the next attempt the rescue:
+When placement throws after the game added the player (a mod's login code, or the test mod at the end of `placeNewPlayer`), the player is in the player list and the level, and the connection's listener is the new game listener. The client got nothing: the connection holds every packet a placement sends until the placement returns (`HeldPackets`, implemented on `Connection` by each band's `ConnectionMixin` around the core's `PacketHold`, which has its unit tests). A packet the game sends after the placement call can still throw while the held ones go out: that counts as a failed placement too, and the packets sent before it have reached the client, so the retry is then a second login for it. `Connection#send` only queues a packet on the channel's event loop, so this needs a packet the game itself refuses. Before the next attempt the rescue:
 
 1. marks that `ServerPlayer` instance as a failed attempt, so `PlayerList#save` skips it from then on;
 2. removes it with `PlayerList#remove(ServerPlayer)`, the game's leave path: it leaves the level, the player list and the boss bars, the cached stats and advancements of its UUID are dropped (the next instance reads them again), the other players get the tab list removal, and Forge and NeoForge fire their logged-out event;
@@ -141,7 +141,7 @@ The core splits the saved tag into units (`PlayerData`), whatever the loader: Fo
 
 ## Performance and safety
 
-- The normal path adds two hooks, with no IO and no reflection: the return hook of the login handler, and on 1.20.1 the read hook of `PlayerDataStorage#load`. Their measured cost is in [TESTING.md](TESTING.md), Normal path cost. The packet hold adds a hold and a release around the placement call, and to each packet the server sends a callback object and one volatile read.
+- On the normal path the mod runs, with no IO and no reflection: the return hook of the login handler, on 1.20.1 the read hook of `PlayerDataStorage#load`, and the packet hold (a hold and a release around the placement call, and a release in the return hook). Their measured cost is in [TESTING.md](TESTING.md), Normal path cost. Each packet the server sends also costs, when nothing is held, a callback object and one volatile read.
 - Restore is limited to operators and the console.
 - The mod only runs the game's own decoders on quarantined data, never anything else.
 - A single entry's payload is capped at 2 MiB. Larger units are recorded as "too large" and kept in `original/` only.
