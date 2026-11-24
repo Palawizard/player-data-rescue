@@ -1,6 +1,7 @@
 package fr.palawi.playerdatarescue.mixin;
 
 import com.mojang.authlib.GameProfile;
+import fr.palawi.playerdatarescue.mc.HeldPackets;
 import fr.palawi.playerdatarescue.mc.Join1201;
 import fr.palawi.playerdatarescue.mc.RescueService;
 import net.minecraft.network.Connection;
@@ -36,10 +37,34 @@ abstract class ServerLoginPacketListenerImplMixin {
 
     @Inject(
             method = "handleAcceptedLogin",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;placeNewPlayer(Lnet/minecraft/server/level/ServerPlayer;)V"))
+    private void playerdatarescue$holdPackets(CallbackInfo ci) {
+        HeldPackets.hold(connection);
+    }
+
+    @Inject(
+            method = "handleAcceptedLogin",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;placeNewPlayer(Lnet/minecraft/server/level/ServerPlayer;)V",
+                            shift = At.Shift.AFTER))
+    private void playerdatarescue$releasePackets(CallbackInfo ci) {
+        HeldPackets.release(connection);
+    }
+
+    @Inject(
+            method = "handleAcceptedLogin",
             at = @At(value = "INVOKE", target = "Lorg/slf4j/Logger;error(Ljava/lang/String;Ljava/lang/Throwable;)V"),
             cancellable = true,
             locals = LocalCapture.CAPTURE_FAILHARD)
     private void playerdatarescue$rescue(CallbackInfo ci, Component refusal, ServerPlayer online, Exception failure) {
+        HeldPackets.drop(connection);
         if (RescueService.onPlacementFailure(new Join1201(server, connection, gameProfile), failure)) {
             ci.cancel();
         }
@@ -47,6 +72,7 @@ abstract class ServerLoginPacketListenerImplMixin {
 
     @Inject(method = "handleAcceptedLogin", at = @At("RETURN"))
     private void playerdatarescue$joined(CallbackInfo ci) {
+        HeldPackets.release(connection);
         RescueService.onLoginFinished(new Join1201(server, connection, gameProfile));
     }
 }

@@ -37,7 +37,7 @@ When T1, T2 or T3 occurs for player P:
 1. Backup. Copy the source file and its `_old` counterpart, unchanged, into the *incident* folder. If the copy fails, stop and fall back to vanilla behaviour, with an error in the log. The mod never continues without a backup.
 2. Parse. Read the raw NBT root. If parsing fails (T2), try the `_old` file. If both fail, P starts as a new player, and the incident records "unreadable file".
 3. Salvage. Rebuild P section by section (§4). Each section loads on its own. A failure quarantines that section or that single entry, and salvage continues.
-4. Place. Place P in the world with the salvaged data. If placement fails, retry once with the minimal profile. If that fails too, the failure is not data-related (§2). A retry after a failed placement runs on the same connection: the client gets a second login and stays connected (ADR-PDR-012).
+4. Place. Place P in the world with the salvaged data. If placement fails, retry once with the minimal profile. If that fails too, the failure is not data-related (§2). A retry after a failed placement runs on the same connection: the client only gets the packets of the placement that worked, and stays connected (ADR-PDR-012).
 5. Persist. Save P's new state through the normal save path straight away, so the broken data is not read again on the next join. The original file is already in the incident folder.
 6. Report. Write `report.txt` and `report.json` (§6), and log a one-line summary with the incident path.
 7. Notify, if enabled (§8). P sees "Some of your saved data could not be loaded and was set aside. An admin can restore it." Online operators see the player, the number of quarantined parts, the suspects and a clickable `/pdrescue show` command.
@@ -177,7 +177,7 @@ S1, S3, S4 and S7, and S2, S13 and S14 on NeoForge, depend on T4. They are check
 | S12 | Valid player data. | P joins. | No incident and no file written. The extra work on the normal path is under 1 ms. |
 | S13 | The test mod saves an attachment it cannot read back. | P joins and leaves four times. | The first joins create incidents. From the third consecutive failure the key becomes a recurring issue: one record, operators told once, and no new incident for that key. |
 | S14 | S13, then the test mod is switched to a fixed behaviour. | P joins. | The attachment loads, and the recurring record is closed automatically. |
-| S15 | The test mod's placement fails only when P's saved data holds its attachment (a data-related T3). | P joins with the vanilla client. | P joins with the minimal profile on the same connection and the client stays connected. One incident: T3, minimal profile, the attachment set aside with the other sections, the test mod as suspect. |
+| S15 | The test mod's placement fails only when P's saved data holds its attachment (a data-related T3). | P joins with the vanilla client. | P joins with the minimal profile on the same connection, the client stays connected and moves its player. One incident: T3, minimal profile, the attachment set aside with the other sections, the test mod as suspect. |
 
 ## Glossary
 

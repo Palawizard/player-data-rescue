@@ -44,7 +44,6 @@ public final class Join263 implements GameJoin {
     private final ClientInformation clientInformation;
     private final Supplier<CommonListenerCookie> cookie;
     private final Supplier<PrepareSpawnTask> spawnTask;
-    private final StaleTeleports teleports = new StaleTeleports();
 
     public Join263(
             MinecraftServer server,
@@ -109,14 +108,15 @@ public final class Join263 implements GameJoin {
             public void place(NbtCompound data) {
                 source.write(data);
                 InboundReset.beforePlacement(connection);
-                ServerPlayer player;
+                HeldPackets.hold(connection);
                 try {
-                    player = spawnTask.get().spawnPlayer(connection, cookie.get());
+                    spawnTask.get().spawnPlayer(connection, cookie.get());
                 } catch (RuntimeException e) {
+                    HeldPackets.drop(connection);
                     discardHalfPlaced();
                     throw e;
                 }
-                teleports.placed(player);
+                HeldPackets.release(connection);
             }
         };
     }
@@ -134,7 +134,6 @@ public final class Join263 implements GameJoin {
 
     @Override
     public void discardHalfPlaced() {
-        teleports.failed(connection);
         PlayerList players = server.getPlayerList();
         ServerPlayer half = players.getPlayer(id());
         if (half != null) {

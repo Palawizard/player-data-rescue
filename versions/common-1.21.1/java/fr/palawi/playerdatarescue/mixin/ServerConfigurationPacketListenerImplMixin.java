@@ -1,6 +1,7 @@
 package fr.palawi.playerdatarescue.mixin;
 
 import com.mojang.authlib.GameProfile;
+import fr.palawi.playerdatarescue.mc.HeldPackets;
 import fr.palawi.playerdatarescue.mc.Join1211;
 import fr.palawi.playerdatarescue.mc.RescueService;
 import net.minecraft.network.Connection;
@@ -40,11 +41,35 @@ abstract class ServerConfigurationPacketListenerImplMixin extends ServerCommonPa
 
     @Inject(
             method = "handleConfigurationFinished",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/players/PlayerList;placeNewPlayer(Lnet/minecraft/network/Connection;Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/server/network/CommonListenerCookie;)V"))
+    private void playerdatarescue$holdPackets(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
+        HeldPackets.hold(connection);
+    }
+
+    @Inject(
+            method = "handleConfigurationFinished",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/players/PlayerList;placeNewPlayer(Lnet/minecraft/network/Connection;Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/server/network/CommonListenerCookie;)V",
+                            shift = At.Shift.AFTER))
+    private void playerdatarescue$releasePackets(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
+        HeldPackets.release(connection);
+    }
+
+    @Inject(
+            method = "handleConfigurationFinished",
             at = @At(value = "INVOKE", target = "Lorg/slf4j/Logger;error(Ljava/lang/String;Ljava/lang/Throwable;)V"),
             cancellable = true,
             locals = LocalCapture.CAPTURE_FAILHARD)
     private void playerdatarescue$rescue(
             ServerboundFinishConfigurationPacket packet, CallbackInfo ci, Exception failure) {
+        HeldPackets.drop(connection);
         if (RescueService.onPlacementFailure(join(), failure)) {
             ci.cancel();
         }
@@ -52,6 +77,7 @@ abstract class ServerConfigurationPacketListenerImplMixin extends ServerCommonPa
 
     @Inject(method = "handleConfigurationFinished", at = @At("RETURN"))
     private void playerdatarescue$joined(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
+        HeldPackets.release(connection);
         RescueService.onLoginFinished(join());
     }
 
