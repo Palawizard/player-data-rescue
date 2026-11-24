@@ -78,11 +78,11 @@ The vanilla core only: position (world spawn if invalid), health 20, food 20 and
 
 A mod that saves data it cannot read back breaks every login. Each join would then create a new incident for the same key. To keep this readable:
 
-- A unit key that is quarantined for the same player on `recurringThreshold` consecutive joins (default 3), or for `recurringThreshold` different players, becomes a *recurring issue*.
-- A recurring issue has one record under `<world>/playerdatarescue/recurring/<key>.json`, holding the key, the suspected mod, the affected players, the first and last occurrence, a counter, and the first and the latest payload.
-- Later failures for that key update the record instead of creating new incidents. Other failing units of the same join still create an incident as usual.
+- A unit key that is quarantined for the same player on `recurringThreshold` consecutive joins (default 3), or for `recurringThreshold` different players, becomes a *recurring issue*. A join of that player where the key does not fail ends the streak. Streaks are kept in `<world>/playerdatarescue/<uuid>/streaks.json`, so a restart does not reset them. Only the units of a rescue that ends with the salvaged data count; a minimal profile sets whole sections aside, not one key.
+- A recurring issue has one record under `<world>/playerdatarescue/recurring/<key>.json`, holding the key, the suspected mod, the affected players, the first and last occurrence, a counter (the failed joins of the streak that made it, then one per join), and the first and the latest payload, as SNBT in the record and as binary NBT next to it (`<key>.first.nbt`, `<key>.latest.nbt`).
+- Later failures for that key update the record instead of creating new incidents. Other failing units of the same join still create an incident as usual. A join whose only failing units are recurring keys keeps no incident: the record holds their payload, and the rest of the data is saved as usual.
 - Operators are told once per server start: "Mod X saves player data it cannot load back. That data is set aside at every login until X is fixed. Report it to X with the file below."
-- The record is cleared by `/pdrescue dismiss recurring <key>`, or automatically when the key loads successfully again.
+- The record is closed by `/pdrescue dismiss recurring <key>`, or automatically when the key loads successfully again: a player of the record joins without a failure and their saved data holds the key. A closed record moves to `recurring/closed/` with its payloads; nothing is deleted.
 
 ## 5. Suspected mod attribution
 
