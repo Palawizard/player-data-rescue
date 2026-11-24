@@ -121,7 +121,6 @@ final class RecurringService {
      * the records of keys found in their data close: those keys loaded again.
      */
     static void joined(GameJoin join) {
-        long start = Timing.start();
         try {
             if (!RescueService.active() || !concerned(join.worldDirectory()).contains(join.id())) {
                 return;
@@ -145,8 +144,6 @@ final class RecurringService {
             }
         } catch (IOException | RuntimeException e) {
             LOGGER.error("[{}] could not update the recurring issues of {}", ModInfo.MOD_ID, join.name(), e);
-        } finally {
-            Timing.stop(join.id(), start);
         }
     }
 

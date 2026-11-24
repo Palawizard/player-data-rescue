@@ -103,6 +103,22 @@ When placement throws after the game added the player (a mod's login code, or th
 
 When the last attempt fails too, the game's own catch disconnects the client, and the disconnect removes the last instance again through `PlayerList#remove`. Because both instances are marked, neither removal saves a half-loaded state over the player's file, which the rescue has put back to the original by then. Checked by S11 on every band: its diagnosis must rest on the test mod's own failure in the minimal profile's placement, not on an error of the retry. Without step 3, the retry failed on every band but Fabric 1.20.1 (`Duplicate handler name: forge:vanilla_filter`, or `unsupported message type: UnconfiguredPipelineHandler$$Lambda`).
 
+### Hooks of the commands and the restore (M3)
+
+Checked on 2026-11-24 in the same sources, for every Tier A band.
+
+| Band | Commands | Before the player's data is read |
+|---|---|---|
+| 1.20.1 | `@Inject` at the `TAIL` of `Commands#<init>(Commands$CommandSelection, CommandBuildContext)`, `@Shadow` of `dispatcher` | `@Inject` before `PlayerList#getPlayerForLogin(GameProfile)` in `ServerLoginPacketListenerImpl#handleAcceptedLogin()V` |
+| 1.21.1 | same constructor | `@Inject` before `PlayerList#getPlayerForLogin(GameProfile, ClientInformation)` in `ServerConfigurationPacketListenerImpl#handleConfigurationFinished`, after the method has moved to the server thread (NeoForge's copy of the guard mixin has the same hook) |
+| 26.3 | same constructor | `@Inject` at the `HEAD` of `PrepareSpawnTask#start(Ljava/util/function/Consumer;)V`, which reads the player file first, during configuration (`@Shadow` of `server` and `nameAndId`) |
+
+Permission checks and clickable text differ by version and live in each `common-<minecraft>` folder (`Texts`): `CommandSourceStack#hasPermission(int)` and `new ClickEvent(Action.RUN_COMMAND, ...)` on 1.20.1 and 1.21.1; the `Commands.LEVEL_*` permission checks on `CommandSourceStack#permissions()` and `ClickEvent.RunCommand` on 26.3. Restored stacks with no free slot are decoded with `ItemStack.of(CompoundTag)` (1.20.1), `ItemStack.parse(HolderLookup.Provider, Tag)` (1.21.1) or `ItemStack.CODEC` with `RegistryOps` (26.3), and spawned as an `ItemEntity` with no pickup delay at the player's position.
+
+## Restore
+
+The core holds the restore (`core/restore`): `Restorer` queues entries and prepares a join, `RestoreMerge` puts entries into a copy of the player's data, and `RestoreQueue` is the queue file. The bands only call it from the hook above, write the merged data where the game reads it (`DataSource#write`, as an attempt does), and set the status of each entry when the login handler returns or the rescue runs (`RestoreService`). The backup incident is written before the data changes, through the same store as a rescue.
+
 ## Rescue strategy
 
 1. Guard the placement with an injection inside the catch of the login handler (ADR-PDR-009). On a failure, hand over to the rescue flow; when it lets the player in, the handler returns there. The normal path is unchanged apart from two small hooks (S12).

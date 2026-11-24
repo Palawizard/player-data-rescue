@@ -365,6 +365,11 @@ public final class RescueService {
     public static void onLoginFinished(GameJoin join) {
         long start = Timing.start();
         Unreadable pending = UNREADABLE.isEmpty() ? null : UNREADABLE.remove(join.id());
+        boolean placed = join.placed();
+        if (placed) {
+            RestoreService.joined(join);
+            RecurringService.joined(join);
+        }
         Timing.stop(join.id(), start);
         if (Timing.ENABLED) {
             long[] cost = Timing.take(join.id());
@@ -375,11 +380,7 @@ public final class RescueService {
                     String.format(Locale.ROOT, "%.1f", cost[0] / 1000.0),
                     cost[1]);
         }
-        if (join.placed()) {
-            RestoreService.joined(join);
-            RecurringService.joined(join);
-        }
-        if (pending == null || !join.placed()) {
+        if (pending == null || !placed) {
             return;
         }
         try {

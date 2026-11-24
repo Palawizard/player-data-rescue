@@ -129,17 +129,21 @@ The root command is `/pdrescue`. The permission level is configurable (default 3
 | `/pdrescue dismiss recurring <key>` | Close a recurring issue. |
 | `/pdrescue export <player> <incident>` | Print the incident folder path for bug reports. |
 
-Player arguments accept online players. For `list`, `show` and `export`, they also accept offline players by name or UUID.
+Player arguments accept an online player's name, and the name or UUID of a player who has incidents, online or not. `restore all` and `dismiss all` leave dismissed entries alone; a dismissed entry can still be restored by its id. Clickable actions use the player's UUID.
 
 ### 7.1 Restore
 
-- P must be online. For an offline player, the restore is queued and runs at the next join.
-- Inventory and ender chest entries go back into their original slot if it is empty, otherwise into the first free slot of the same container, otherwise they drop at P's feet with no pickup delay, and the drop is logged.
-- Effects are applied with their remaining duration.
-- Attachments are decoded again by the loader for that key. If the key already exists on P, the entry becomes `restore_failed` with the reason "already present". Entries are never merged.
+Decided on 2026-11-24 (ADR-PDR-013): a restore always goes through the game's own read at the player's next join, online or not.
+
+- The command queues the entries in `<world>/playerdatarescue/<uuid>/restore-queue.json`. An online player is told to leave and join again to get them back.
+- At the next join, before the game reads P's data, the mod copies the source files into a new incident (trigger `RESTORE`, outcome `restore_backup`), then puts the entries into the data. The game's read then decodes each entry, as it decodes the rest. Without that backup nothing is changed, and the entries stay queued.
+- Inventory and ender chest entries go back into their original slot if it is empty, otherwise into the first free slot of the same container, otherwise they drop at P's feet with no pickup delay once P is in the world, and the drop is logged.
+- Effects come back with their saved remaining duration.
+- Attachments, mod keys, effects and the recipe book replace what P has under the same key. The value they replace is kept as a quarantine entry of the backup incident, so it can be restored in turn. Entries are never merged.
 - Vehicles cannot be restored in v1. The payload is kept for manual recovery.
-- A restored entry becomes `restored`, and restoring it again does nothing. This is what prevents item duplication.
-- A failed restore marks the entry `restore_failed` with the new error and keeps the payload.
+- An entry saved with another data version than P's current data is refused, since the game would read it with the wrong data fixes.
+- After the join, each entry put back becomes `restored`, and restoring it again does nothing. This is what prevents item duplication. Queuing the same entry twice before the join restores it once.
+- An entry that cannot go back, or that the join sets aside again, becomes `restore_failed` with the reason, and keeps its payload. It can be queued again.
 
 ## 8. Configuration (`config/playerdatarescue.json`)
 
@@ -177,6 +181,7 @@ S1, S3, S4 and S7, and S2, S13 and S14 on NeoForge, depend on T4. They are check
 | S12 | Valid player data. | P joins. | No incident and no file written. The extra work on the normal path is under 1 ms. |
 | S13 | The test mod saves an attachment it cannot read back. | P joins and leaves four times. | The first joins create incidents. From the third consecutive failure the key becomes a recurring issue: one record, operators told once, and no new incident for that key. |
 | S14 | S13, then the test mod is switched to a fixed behaviour. | P joins. | The attachment loads, and the recurring record is closed automatically. |
+| S16 | S15, then the test mod's placement accepts the attachment again. | An operator runs `restore` for the whole inventory twice, and P joins after each. | The stacks come back once, in their slots, and the second restore says the entry is already restored. The data before the restore is backed up in a new incident. |
 
 ## Glossary
 
