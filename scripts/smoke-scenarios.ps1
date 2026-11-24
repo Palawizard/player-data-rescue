@@ -31,9 +31,7 @@ $scenarioDefinitions = @(
     @{ Id = 'S12'; Player = 'S12Bot'; Prepare = @(''); Join = @(''); Setup = @(); Proof = '' }
     @{ Id = 'S13'; Player = 'S13Bot'; Prepare = @('unreadable-attachment'); Join = @('unreadable-attachment', 'unreadable-attachment'); Setup = @();
         Proof = 'saved attachment pdrtest:broken of S13Bot as unreadable'; JoinProof = 'pdrtest: deliberate failure: attachment pdrtest:broken of S13Bot cannot read back' }
-    # S15's client waits before it confirms a teleport, so the confirmation of the failed placement
-    # always reaches the listener of the minimal profile's placement (ARCHITECTURE.md, Cleanup after a failed placement).
-    @{ Id = 'S15'; Player = 'S15Bot'; Prepare = @('attach'); Join = @('attach,placement-rejects-attachment'); Setup = @(); BotArgs = @('--teleport-delay-ms', '500');
+    @{ Id = 'S15'; Player = 'S15Bot'; Prepare = @('attach'); Join = @('attach,placement-rejects-attachment'); Setup = @();
         Proof = 'saved attachment pdrtest:broken of S15Bot as int'; JoinProof = 'pdrtest: deliberate failure: placement of S15Bot with attachment pdrtest:broken' }
 )
 
@@ -168,11 +166,11 @@ function Wait-ForLog {
 }
 
 function Start-JoinBot {
-    param([string]$Player, [int]$StaySeconds, [string[]]$ExtraArgs = @())
+    param([string]$Player, [int]$StaySeconds)
     $output = Join-Path $serverDir "bot-$Player.log"
     Assert-ScenarioTime
     $botArgs = @('-cp', 'join-bot', 'JoinBot', '--port', "$ServerPort", '--protocol', "$(Get-ProtocolVersion)", '--name', $Player,
-        '--stay-seconds', "$StaySeconds", '--timeout-seconds', '120') + $ExtraArgs
+        '--stay-seconds', "$StaySeconds", '--timeout-seconds', '120')
     $startArgs = @{
         FilePath               = $javaExe
         ArgumentList           = $botArgs
@@ -495,9 +493,7 @@ function Invoke-SmokeScenarios {
             for ($j = 0; $j -lt $scenario.Join.Count; $j++) {
                 Set-PlayerModes -Player $scenario.Player -Modes $scenario.Join[$j]
                 $offset = Get-LatestLogLength
-                $extraArgs = @()
-                if ($scenario.BotArgs) { $extraArgs = $scenario.BotArgs }
-                $botOutput = Wait-JoinBot -Bot (Start-JoinBot -Player $scenario.Player -StaySeconds 4 -ExtraArgs $extraArgs)
+                $botOutput = Wait-JoinBot -Bot (Start-JoinBot -Player $scenario.Player -StaySeconds 4)
                 $botOutputs += $botOutput
                 Start-Sleep -Seconds 2
                 $joinLog = Get-LogSince -Offset $offset
@@ -512,6 +508,14 @@ function Invoke-SmokeScenarios {
                 if ($result.Outcome -eq 'invalid' -and -not $placeFailed) { $failures += "$id disconnected without the 'Couldn't place player in world' log line." }
                 if (@('S11', 'S15') -contains $id -and $j -eq 0 -and @([regex]::Matches($joinLog, "$($scenario.Player)\[[^\]]*\] logged in")).Count -lt 2) {
                     $failures += "$id first join: the minimal profile was not placed after the failed placement."
+                }
+                # The client only gets the placement that worked (ARCHITECTURE.md, Cleanup after a failed placement).
+                # When no rescue is tried (S11's second join), the disconnect lets out the failed placement's packets.
+                $logins = @([regex]::Matches($botOutput, 'joined the world')).Count
+                $expectedLogins = @{ 'S15' = 1; 'S11new' = 0 }[$id]
+                if ($id -eq 'S11') { $expectedLogins = @(0, 1)[$j] }
+                if ($null -ne $expectedLogins -and $logins -ne $expectedLogins) {
+                    $failures += "$id join $($j + 1): the join client got $logins login packet(s), expected $expectedLogins."
                 }
                 if ($id -eq 'S11' -and $j -eq 1 -and $joinLog -notmatch 'no rescue is tried') {
                     $failures += 'S11 second join: the log does not say that no rescue is tried.'

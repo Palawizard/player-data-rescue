@@ -30,7 +30,8 @@ public interface GameJoin {
 
     /**
      * Removes the player that a failed placement left in the player list, without saving it
-     * (ARCHITECTURE.md, Rescue strategy). Does nothing when there is none.
+     * (ARCHITECTURE.md, Rescue strategy), then drops the packets the connection held for the
+     * client since that placement started, the removal's own included.
      */
     void discardHalfPlaced();
 

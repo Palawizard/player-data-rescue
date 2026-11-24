@@ -32,7 +32,6 @@ public final class Join1211 implements GameJoin {
     private final GameProfile profile;
     private final ClientInformation clientInformation;
     private final Supplier<CommonListenerCookie> cookie;
-    private final StaleTeleports teleports = new StaleTeleports();
 
     public Join1211(
             MinecraftServer server,
@@ -92,13 +91,16 @@ public final class Join1211 implements GameJoin {
                 InboundReset.beforePlacement(connection);
                 PlayerList players = server.getPlayerList();
                 ServerPlayer player = players.getPlayerForLogin(profile, clientInformation);
+                HeldPackets.hold(connection);
                 try {
                     players.placeNewPlayer(connection, player, cookie.get());
-                } catch (RuntimeException e) {
+                    // A packet the game sends can still throw here, as it would inside the placement.
+                    HeldPackets.release(connection);
+                } catch (Exception | LinkageError e) {
                     discard(players, player);
+                    HeldPackets.drop(connection);
                     throw e;
                 }
-                teleports.placed(player);
             }
         };
     }
@@ -118,17 +120,16 @@ public final class Join1211 implements GameJoin {
 
     @Override
     public void discardHalfPlaced() {
-        teleports.failed(connection);
         ServerPlayer half = server.getPlayerList().getPlayer(id());
         if (half != null) {
             discard(server.getPlayerList(), half);
         }
+        HeldPackets.drop(connection);
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */
-    private void discard(PlayerList players, ServerPlayer player) {
+    private static void discard(PlayerList players, ServerPlayer player) {
         RescueService.markFailed(player);
-        teleports.failed(connection);
         if (players.getPlayers().contains(player)) {
             players.remove(player);
         }

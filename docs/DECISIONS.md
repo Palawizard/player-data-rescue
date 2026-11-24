@@ -184,7 +184,7 @@ The mod uses only Mixin's own injectors and accessors: `@Inject` (with `cancella
 - T2: an `@Inject` at the `Logger.warn` call of the player file read that fails (`PlayerDataStorage#load`), and on 1.20.1 a `@ModifyVariable` on the tag the read returns, to load the `.dat_old` the game does not try on that version.
 - Persistence and cleanup: an `@Invoker` for `PlayerList#save`, an `@Inject` at the head of `PlayerList#save` that skips the player instances of failed attempts, and an `@Accessor` for the private netty channel of `Connection`, to put the connection back before another placement (ADR-PDR-010).
 
-Amended on 2026-11-24: an `@Accessor` of `ServerGamePacketListenerImpl#awaitingTeleport` lets a retry after a failed placement move the new listener's teleport ids past the failed one's (ADR-PDR-012).
+Amended on 2026-11-24: a cancellable `@Inject` at the head of `Connection#send` and two `@Inject` before and after the placement call of the login handler hold the packets of a placement until it worked, so the client never sees a failed one (ADR-PDR-012).
 
 On Forge 1.20.1, which runs on SRG names, the mixin annotation processor of MixinGradle 0.7.38 (`org.spongepowered:mixin:0.8.5:processor`) writes `playerdatarescue.refmap.json` from the Mojang names in the source. The other bands run on Mojang names (Forge 1.21.1 since ADR-PDR-007) or are remapped by Loom, and need no refmap.
 
@@ -204,11 +204,25 @@ Why: the game's read path includes the data fixers and the loaders' own events a
 
 Status: Accepted.
 
-The checks that need the real game client (the second login packet of a T3 retry, and the player message and the operator notice as the client shows them) run the client with portablemc 5.0.6, a command-line launcher, with an offline account. `scripts/real-client.ps1` holds the launcher calls, and `prod-smoke.ps1 -RealClient` replays S2 and S15 with the vanilla client of the band on its dedicated server. The launcher is pinned by version: the scripts refuse any other `portablemc --version`. It is installed by hand outside the repository and found through `-Launcher` or `PDR_PORTABLEMC`, and it never goes into a mod JAR. The client opens a game window, so these checks run on a desktop session, not in CI.
+The checks that need the real game client (whether the client survives a T3 retry on the same connection, and the player message and the operator notice as the client shows them) run the client with portablemc 5.0.6, a command-line launcher, with an offline account. `scripts/real-client.ps1` holds the launcher calls, and `prod-smoke.ps1 -RealClient` replays S2, S15 and S11 with the vanilla client of the band on its dedicated server, with a vanilla operator client online. The launcher is pinned by version: the scripts refuse any other `portablemc --version`. It is installed by hand outside the repository and found through `-Launcher` or `PDR_PORTABLEMC`, and it never goes into a mod JAR. The client opens a game window, so these checks run on a desktop session, not in CI.
 
 Options considered, checked on 2026-11-24:
 
 - HeadlessMC (headlesshq/headlessmc): its latest release is 3.0.0-RC9, a pre-release, and its README limits offline accounts to running the game headless in CI pipelines.
 - portablemc (mindstorm38/portablemc): release 5.0.6 of 2026-10-18, a single binary for Linux, macOS and Windows, signed with the project's PGP key. Offline accounts are a plain option (`-u <name>`), it installs the vanilla client and the Fabric, Forge and NeoForge clients of every Tier A band, and it starts the game straight into a server (`--join-server`) or a singleplayer world (`--join-world`) through the game's quick play arguments. It reports the game's process id (`launched <pid>` with `--output machine`), so a script can close that window and no other.
 
-Why: portablemc covers the three Tier A Minecraft versions and the three loaders with a stable release, and offline accounts are a supported use. The window is closed the way a player closes it (the window's close message on Windows, Hyprland's window close dispatcher on Linux, checked on Hyprland 0.57.2), so the game stops as it would for a player.
+Why: portablemc covers the three Tier A Minecraft versions and the three loaders with a stable release, and offline accounts are a supported use. The window is closed the way a player closes it (the window's close message on Windows, Hyprland's window close dispatcher on Linux, checked on Hyprland 0.57.2), so the game stops as it would for a player. Elsewhere the script sends the game `SIGTERM` instead.
+
+## ADR-PDR-012: The T3 retry stays on the same connection, and the client only sees the placement that worked
+
+Status: Accepted.
+
+When a placement fails because of the data (T3), the rescue places the minimal profile on the same connection, right away, as ADR-PDR-010 describes. The connection holds every packet a placement sends until the placement returns, and drops the packets of a placement that failed, so the client gets one login packet: the one of the placement that worked. The other way, decided on 2026-11-24 in case a real client could not take the retry, was a clean disconnect followed by the rescue at the next join.
+
+Checked on 2026-11-24 with the vanilla client of each Tier A band, started by portablemc (ADR-PDR-011), on S15 (SPEC.md): a placement that fails only when the saved data holds the test mod's attachment.
+
+- Without the hold, the client got the login packet of the failed placement, then the one of the minimal profile. The vanilla client of 1.20.1, 1.21.1 and 26.3 makes a new level at each login packet but keeps its local player, which stays in the first level, where no chunk ever arrives. The player stopped moving: lifted 3 blocks by RCON after the rescue, the vanilla 1.21.1 client stayed in the air, and on screen its position shook. The client also confirmed the teleports of both placements, and the new game listener disconnected it with "Invalid move player packet received" when a confirmation of the failed placement carried the id it was waiting for (seen on the vanilla 1.21.1 client before a first fix that moved the teleport ids, which the hold replaces).
+- The removal of the half-placed player sends packets to the same connection. When the hold ended before that removal, those packets reached a vanilla 1.20.1 client that had no level yet (`NullPointerException` in `handleRemoveEntities`, on the Forge 1.20.1 server). The hold now ends after the removal.
+- With the hold, on every Tier A band, the vanilla client stays connected for 30 seconds after the rescue, falls back when lifted, shows a chat message sent after that time and the player message, and the server lists it as online; the join client of S15 gets one login packet. Results per band are in TESTING.md, Real client checks.
+
+Why: the player gets in at once, as if the first placement had worked, and the client never sees a state the game itself never produces. The disconnect-and-rejoin option would cost the player a second join for the same result. The cost on the normal path is a hold and a release around the placement call and a release in the return hook, and, for each packet the server sends while nothing is held, a callback object and one volatile read.
