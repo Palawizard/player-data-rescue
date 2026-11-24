@@ -68,6 +68,7 @@ Observed on 2026-11-16 on every Tier A band (Forge and Fabric 1.20.1; Forge, Fab
 | S11 (new player) | Placement throws, no saved data | invalid; one incident, T3, `not_data_related` with no original files, suspect pdrtest | same | same |
 | S12 | Valid data | joined, no incident; normal path 2.9 to 9.1 µs (Normal path cost below) | same | same |
 | S13 | Attachment saved in a form it cannot read back | joined at both joins; one incident per join (recurring issues are M3) | same | joined, attachment lost, no incident (T4) |
+| S15 (2026-11-24) | Placement fails only when the data holds the test attachment | joined with one login packet; one incident, T3, `minimal_profile`, `section.ForgeCaps` set aside with the other sections, suspect pdrtest | joined; same with `key.pdrtest:broken` | joined; same with `section.neoforge:attachments` |
 
 "Lost" means the game drops the unit while loading, and the next save writes the player without it. Those units are trigger T4 (SPEC.md section 2), a later milestone. The details per band are in [ARCHITECTURE.md](ARCHITECTURE.md), Hook points.
 
@@ -111,6 +112,8 @@ Dedicated server, vanilla client of the band: `./scripts/prod-smoke.ps1 -BandId 
 S2 checks the same fall. A client that got a second login packet passed every other check but this one: its player stayed in the air, and shook on screen (ARCHITECTURE.md, Cleanup after a failed placement).
 
 `OpClient` must show the operator notice of each rescue. Both clients are closed through their window, as a player closes them.
+
+Observed on 2026-11-24 with portablemc 5.0.6, on every Tier A band (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3): S15 placed the player twice on the server and once for the client, the client stayed 30 seconds, fell 3 blocks back after the lift, showed the chat marker and the player message, and logged no error; S2 passed on Forge and Fabric; `OpClient` showed every operator notice; S10 passed after the run. Before the packet hold, on Fabric 1.21.1, S15 passed every other check while a lift by RCON showed its player stuck in the air.
 
 ## Manual check: S8, singleplayer host
 
