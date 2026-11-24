@@ -202,6 +202,7 @@ public final class JoinBot {
     private double z;
     private float yRot;
     private float xRot;
+    private long teleportDelayMillis;
 
     private JoinBot(Profile profile, String host, int port, String name, int viewDistance, long stay, long timeout) {
         this.profile = profile;
@@ -218,7 +219,8 @@ public final class JoinBot {
         for (int i = 0; i < args.length; i++) {
             if (!args[i].startsWith("--") || i + 1 >= args.length) {
                 System.err.println("Usage: java JoinBot.java --port <port> --protocol <763|767|777> --name <name>"
-                        + " [--host 127.0.0.1] [--stay-seconds 5] [--timeout-seconds 120] [--view-distance 8]");
+                        + " [--host 127.0.0.1] [--stay-seconds 5] [--timeout-seconds 120] [--view-distance 8]"
+                        + " [--teleport-delay-ms 0]");
                 System.exit(EXIT_USAGE);
             }
             options.put(args[i].substring(2), args[++i]);
@@ -241,6 +243,7 @@ public final class JoinBot {
                 Integer.parseInt(options.getOrDefault("view-distance", "8")),
                 Long.parseLong(options.getOrDefault("stay-seconds", "5")),
                 Long.parseLong(options.getOrDefault("timeout-seconds", "120")));
+        bot.teleportDelayMillis = Long.parseLong(options.getOrDefault("teleport-delay-ms", "0"));
         System.exit(bot.run());
     }
 
@@ -445,6 +448,15 @@ public final class JoinBot {
         z = (relatives & 4) != 0 ? z + nz : nz;
         yRot = (relatives & 8) != 0 ? yRot + nyRot : nyRot;
         xRot = (relatives & 16) != 0 ? xRot + nxRot : nxRot;
+        if (teleportDelayMillis > 0) {
+            // A slow client: the confirmation of a failed placement's teleport then reaches the
+            // listener of the next placement, whatever the server's timing (S15).
+            try {
+                Thread.sleep(teleportDelayMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         Buf accept = new Buf(profile.id("playAcceptTeleportationOut")).varInt(teleportId);
         if (profile.teleportIdFirst()) {
             accept.f64(x).f64(y).f64(z).f32(yRot).f32(xRot);
