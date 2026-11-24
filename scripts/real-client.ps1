@@ -275,6 +275,34 @@ function Invoke-RealClientScenario {
     return @{ Line = $line; Problems = $problems }
 }
 
+function Invoke-RealClientDisconnect {
+    # S11 with a real client: every placement fails, so the client never gets a login packet, only
+    # the game's "Invalid player data" disconnect (ARCHITECTURE.md, Cleanup after a failed
+    # placement). It must show that reason and log no packet error or crash.
+    param([hashtable]$Context)
+    $player = 'S11Client'
+    $problems = @()
+    Invoke-PrepareJoin -Scenario @{ Id = 'S11'; Player = $player; Setup = @() } -Modes '' -RunSetup $false | Out-Null
+    Set-PlayerModes -Player $player -Modes 'throw-on-placement'
+    $joinOffset = Get-LatestLogLength
+    $client = Start-RealClient -Launcher $Context.Launcher -Root $Context.Root -Version $Context.Version -JavaExe $javaExe `
+        -Name $player -GameDir (Join-Path $Context.RunRoot $player) -Port $ServerPort
+    try {
+        if (-not (Wait-ForLog -Offset $joinOffset -Pattern "$player lost connection" -Seconds 300)) {
+            $problems += "S11 (real client): $player was not disconnected."
+        } elseif (-not (Wait-RealClientLog -Client $client -Pattern 'Invalid player data' -Seconds 20)) {
+            $problems += "S11 (real client): $player did not show the reason 'Invalid player data'."
+        }
+        $problems += @(Test-RealClientHealthy -Client $client | Where-Object { $_ -notmatch 'Client disconnected with reason|Disconnecting from server|Lost connection' })
+    } finally {
+        $closed = Close-RealClient -Client $client
+    }
+    $joinLog = Get-LogSince -Offset $joinOffset
+    if ($joinLog -notmatch 'pdrtest: deliberate failure: placement of S11Client') { $problems += "S11 (real client): the join did not hit the test mod failure." }
+    $reason = @((Get-RealClientLog -Client $client) -split "`r?`n" | Where-Object { $_ -match 'Invalid player data' }) | Select-Object -First 1
+    return @{ Line = "S11 real client ${player}: disconnected, client log '$("$reason".Trim())', closed cleanly: $closed"; Problems = $problems }
+}
+
 function Invoke-RealClientScenarios {
     param([hashtable]$Context)
     $summary = @()
@@ -298,6 +326,13 @@ function Invoke-RealClientScenarios {
             } catch {
                 $failures += "$($scenario.Id) (real client) failed: $($_.Exception.Message)"
             }
+        }
+        try {
+            $result = Invoke-RealClientDisconnect -Context $Context
+            $summary += $result.Line
+            $failures += $result.Problems
+        } catch {
+            $failures += "S11 (real client) failed: $($_.Exception.Message)"
         }
         $chat = @(Get-RealClientChat -Client $operator)
         foreach ($player in $rescued) {
