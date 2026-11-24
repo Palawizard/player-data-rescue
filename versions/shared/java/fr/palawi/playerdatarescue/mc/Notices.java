@@ -43,7 +43,9 @@ public final class Notices {
                             incident.playerName(),
                             suspects,
                             folder)
-                    .withStyle(ChatFormatting.GOLD);
+                    .withStyle(ChatFormatting.GOLD)
+                    .append(" ")
+                    .append(Texts.action("show", "/pdrescue show " + incident.playerId() + " " + incident.folder()));
         }
         return Component.translatableWithFallback(
                         "playerdatarescue.operator.rescued",
@@ -52,7 +54,21 @@ public final class Notices {
                         Integer.toString(incident.entries().size()),
                         suspects,
                         folder)
-                .withStyle(ChatFormatting.GOLD);
+                .withStyle(ChatFormatting.GOLD)
+                .append(" ")
+                .append(Texts.action("show", "/pdrescue show " + incident.playerId() + " " + incident.folder()));
+    }
+
+    /** To a player whose set-aside data came back at this join. */
+    public static Component restored(int entries) {
+        MutableComponent message = entries == 1
+                ? Component.translatableWithFallback(
+                        "playerdatarescue.player.restored_one", "One set-aside part of your saved data was restored.")
+                : Component.translatableWithFallback(
+                        "playerdatarescue.player.restored",
+                        "%s set-aside parts of your saved data were restored.",
+                        Integer.toString(entries));
+        return message.withStyle(ChatFormatting.GREEN);
     }
 
     private static String suspects(List<Suspect> suspects) {

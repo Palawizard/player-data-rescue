@@ -3,6 +3,7 @@ package fr.palawi.playerdatarescue.mixin;
 import com.mojang.authlib.GameProfile;
 import fr.palawi.playerdatarescue.mc.Join1201;
 import fr.palawi.playerdatarescue.mc.RescueService;
+import fr.palawi.playerdatarescue.mc.RestoreService;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -43,6 +44,19 @@ abstract class ServerLoginPacketListenerImplMixin {
         if (RescueService.onPlacementFailure(new Join1201(server, connection, gameProfile), failure)) {
             ci.cancel();
         }
+    }
+
+    /** Before the game builds and loads the player: a queued restore goes into the data first. */
+    @Inject(
+            method = "handleAcceptedLogin",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/players/PlayerList;getPlayerForLogin(Lcom/mojang/authlib/GameProfile;)Lnet/minecraft/server/level/ServerPlayer;"))
+    private void playerdatarescue$beforeRead(CallbackInfo ci) {
+        Join1201 join = new Join1201(server, connection, gameProfile);
+        RestoreService.beforeRead(join.id(), join.name(), join.worldDirectory(), join.minecraftVersion(), join::source);
     }
 
     @Inject(method = "handleAcceptedLogin", at = @At("RETURN"))

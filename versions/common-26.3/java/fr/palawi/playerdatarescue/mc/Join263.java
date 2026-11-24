@@ -14,7 +14,9 @@ import java.util.function.Supplier;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.Connection;
+import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,6 +25,8 @@ import net.minecraft.server.network.config.PrepareSpawnTask;
 import net.minecraft.server.players.NameAndId;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.util.ProblemReporter;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.level.storage.TagValueInput;
@@ -82,8 +86,13 @@ public final class Join263 implements GameJoin {
 
     @Override
     public DataSource source() {
+        return source(server, new NameAndId(profile));
+    }
+
+    /** Where 26.3 reads a player's data: the player file, which is also the host's. */
+    public static DataSource source(MinecraftServer server, NameAndId player) {
         UUID owner = server.getWorldData().getSinglePlayerUUID();
-        UUID file = server.isSingleplayerOwner(new NameAndId(profile)) && owner != null ? owner : id();
+        UUID file = server.isSingleplayerOwner(player) && owner != null ? owner : player.id();
         return new DataSource.PlayerFile(
                 server.getWorldPath(LevelResource.PLAYER_DATA_DIR).resolve(file + ".dat"));
     }
@@ -157,6 +166,34 @@ public final class Join263 implements GameJoin {
         ServerPlayer player = server.getPlayerList().getPlayer(id());
         if (player != null) {
             player.sendSystemMessage(Notices.forPlayer(outcome));
+        }
+    }
+
+    @Override
+    public void tellRestored(int entries) {
+        ServerPlayer player = server.getPlayerList().getPlayer(id());
+        if (player != null) {
+            player.sendSystemMessage(Notices.restored(entries));
+        }
+    }
+
+    @Override
+    public void dropAtFeet(java.util.List<fr.palawi.playerdatarescue.core.nbt.NbtCompound> stacks) {
+        ServerPlayer player = server.getPlayerList().getPlayer(id());
+        if (player == null) {
+            return;
+        }
+        for (fr.palawi.playerdatarescue.core.nbt.NbtCompound stack : stacks) {
+            ItemStack item = ItemStack.CODEC
+                    .parse(RegistryOps.create(NbtOps.INSTANCE, player.registryAccess()), GameNbt.toGame(stack))
+                    .result()
+                    .orElse(ItemStack.EMPTY);
+            if (item.isEmpty()) {
+                continue;
+            }
+            ItemEntity entity = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), item);
+            entity.setNoPickUpDelay();
+            player.level().addFreshEntity(entity);
         }
     }
 

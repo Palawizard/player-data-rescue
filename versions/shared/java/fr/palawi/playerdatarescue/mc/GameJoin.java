@@ -3,8 +3,10 @@ package fr.palawi.playerdatarescue.mc;
 import fr.palawi.playerdatarescue.core.data.CoreValues;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
+import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -41,6 +43,15 @@ public interface GameJoin {
     void save();
 
     void tellPlayer(Outcome outcome);
+
+    /** Tells the player that set-aside data came back at this join. */
+    void tellRestored(int entries);
+
+    /**
+     * Drops restored stacks that found no free slot at the player's feet, with no pickup delay
+     * (SPEC.md section 7.1). Each stack is decoded by the game.
+     */
+    void dropAtFeet(List<NbtCompound> stacks);
 
     /** Tells every online operator except the joining player. */
     void tellOperators(Incident incident, String folder, int permissionLevel);

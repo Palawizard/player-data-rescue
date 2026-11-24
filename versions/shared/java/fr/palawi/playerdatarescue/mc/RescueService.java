@@ -67,6 +67,18 @@ public final class RescueService {
         config = loaded.config();
     }
 
+    static boolean active() {
+        return bridge != null && config.enabled();
+    }
+
+    static LoaderBridge bridge() {
+        return bridge;
+    }
+
+    static RescueConfig config() {
+        return config;
+    }
+
     /** A player instance of a failed attempt: the game must not save it over the real data. */
     public static void markFailed(Object player) {
         FAILED_ATTEMPTS.add(player);
@@ -81,6 +93,16 @@ public final class RescueService {
      * was rescued and is now in the world; false to let the game disconnect them as it would.
      */
     public static boolean onPlacementFailure(GameJoin join, Exception failure) {
+        try {
+            return placementFailure(join, failure);
+        } finally {
+            // Restored entries of a join that failed without a rescue result failed too; when
+            // the rescue ran, it has already decided each one.
+            RestoreService.rescued(join, null, null);
+        }
+    }
+
+    private static boolean placementFailure(GameJoin join, Exception failure) {
         if (bridge == null || !config.enabled()) {
             return false;
         }
@@ -159,6 +181,7 @@ public final class RescueService {
             source.restore();
             throw e;
         }
+        RestoreService.rescued(join, result, folder);
         Incident incident;
         try {
             incident = IncidentRecorder.record(
@@ -321,6 +344,9 @@ public final class RescueService {
                     join.name(),
                     String.format(Locale.ROOT, "%.1f", cost[0] / 1000.0),
                     cost[1]);
+        }
+        if (join.placed()) {
+            RestoreService.joined(join);
         }
         if (pending == null || !join.placed()) {
             return;

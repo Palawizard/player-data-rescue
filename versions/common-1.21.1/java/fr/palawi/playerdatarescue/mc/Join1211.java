@@ -19,6 +19,8 @@ import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.server.players.PlayerList;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.LevelResource;
 
 /**
@@ -148,6 +150,32 @@ public final class Join1211 implements GameJoin {
         ServerPlayer player = server.getPlayerList().getPlayer(id());
         if (player != null) {
             player.sendSystemMessage(Notices.forPlayer(outcome));
+        }
+    }
+
+    @Override
+    public void tellRestored(int entries) {
+        ServerPlayer player = server.getPlayerList().getPlayer(id());
+        if (player != null) {
+            player.sendSystemMessage(Notices.restored(entries));
+        }
+    }
+
+    @Override
+    public void dropAtFeet(java.util.List<fr.palawi.playerdatarescue.core.nbt.NbtCompound> stacks) {
+        ServerPlayer player = server.getPlayerList().getPlayer(id());
+        if (player == null) {
+            return;
+        }
+        for (fr.palawi.playerdatarescue.core.nbt.NbtCompound stack : stacks) {
+            ItemStack item = ItemStack.parse(player.registryAccess(), GameNbt.toGame(stack))
+                    .orElse(ItemStack.EMPTY);
+            if (item.isEmpty()) {
+                continue;
+            }
+            ItemEntity entity = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), item);
+            entity.setNoPickUpDelay();
+            player.level().addFreshEntity(entity);
         }
     }
 

@@ -3,7 +3,7 @@
   "minVersion": "0.8",
   "package": "fr.palawi.playerdatarescue.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": ["ConnectionAccess", "PlayerDataStorageMixin", "PlayerListAccess", "PlayerListMixin", "NeoForgeConfigurationMixin"],
+  "mixins": ["CommandsMixin", "ConnectionAccess", "NeoForgeConfigurationMixin", "PlayerDataStorageMixin", "PlayerListAccess", "PlayerListMixin"],
   "injectors": {
     "defaultRequire": 1
   }
