@@ -20,6 +20,7 @@ final class BrokenSerializer implements IAttachmentSerializer<BrokenValue> {
     @Override
     public BrokenValue read(IAttachmentHolder holder, ValueInput input) {
         String name = PdrTestNeoForge.nameOf(holder);
+        TestModes.attachmentRead(holder);
         if (TestModes.has(name, TestModes.ATTACHMENT_THROWS)) {
             throw TestModes.failure("reading attachment " + TestModes.ATTACHMENT_ID + " of " + name);
         }
