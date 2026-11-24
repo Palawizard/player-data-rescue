@@ -1,7 +1,8 @@
-# Real game client checks, dot-sourced by prod-smoke.ps1 (-RealClient). The client is the real Minecraft client, started by the
-# portablemc launcher with an offline account (ADR-PDR-011). It opens a game window, so these
-# checks run on a desktop, never in CI. Works on Windows PowerShell 5.1 and on PowerShell 7.
-# Uses from common.ps1: $ProjectRoot and $OnWindows.
+# Real game client checks, dot-sourced by prod-smoke.ps1 (-RealClient). The client is the real
+# Minecraft client, started by the portablemc launcher with an offline account (ADR-PDR-011). It
+# opens a game window, so these checks run on a desktop, never in CI. Works on Windows PowerShell
+# 5.1 and on PowerShell 7. Uses from common.ps1: $ProjectRoot and $OnWindows; from prod-smoke.ps1:
+# $javaExe, $ServerPort, $BandId, $Loader and $band.
 
 $PortableMcVersion = '5.0.6'
 
@@ -217,10 +218,10 @@ $realClientScenarios = @(
     # attachment itself (T4), so there is no rescue to see.
     @{ Id = 'S2'; Player = 'S2Client'; Prepare = 'attach'; Join = 'attach,attachment-throws'; Setup = @();
         Proof = 'saved attachment pdrtest:broken of S2Client as int'; SkipOn = @('neoforge') }
-    # S15 with a real client: the failed placement sent a first login packet, and the minimal
-    # profile is placed on the same connection, which sends a second one. The client must stay.
+    # S15 with a real client: the server places the player twice on one connection, the failed
+    # placement then the minimal profile, and the client only gets the second. The client must stay.
     @{ Id = 'S15'; Player = 'S15Client'; Prepare = 'attach'; Join = 'attach,placement-rejects-attachment'; Setup = @();
-        Proof = 'saved attachment pdrtest:broken of S15Client as int'; SecondLogin = $true }
+        Proof = 'saved attachment pdrtest:broken of S15Client as int'; TwoPlacements = $true }
 )
 $realClientStaySeconds = 30
 
@@ -263,7 +264,7 @@ function Invoke-RealClientScenario {
     $joinLog = Get-LogSince -Offset $joinOffset
     if ($joinLog -match "$player lost connection: (?!Disconnected)(.*)") { $problems += "$id (real client): server log '$player lost connection: $($Matches[1].Trim())'." }
     $logins = @([regex]::Matches($joinLog, "$player\[[^\]]*\] logged in")).Count
-    if ($Scenario.SecondLogin -and $logins -lt 2) { $problems += "$id (real client): $logins placement(s) of $player, expected the failed one and the minimal profile." }
+    if ($Scenario.TwoPlacements -and $logins -lt 2) { $problems += "$id (real client): $logins placement(s) of $player, expected the failed one and the minimal profile." }
     $chat = @(Get-RealClientChat -Client $client)
     if (@($chat | Where-Object { $_.Contains($playerMessage) }).Count -eq 0) {
         $problems += "$id (real client): $player did not show the player message. Chat: [$($chat -join ' | ')]"
