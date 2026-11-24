@@ -22,7 +22,7 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.
 type(scope): description
 ```
 
-- Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `style`.
+- Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `style`, `revert`.
 - Scopes are optional, for example `core`, `fabric`, `forge`, `neoforge`, `config`, `cmd` or a band such as `mc-1.21.1`.
 - The description is imperative, lowercase, without a final period, and the whole line is 72 characters at most.
 - Write a body only when the reason for the change is not obvious from the diff.
