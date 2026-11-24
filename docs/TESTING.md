@@ -95,7 +95,7 @@ The core tests (`core/src/test`) read real player files and `level.dat` files fr
 
 ## Real client checks
 
-Some results depend on the real game client, which the join client only imitates: whether the client takes a second login packet on one connection (the T3 retry, ADR-PDR-012), and how it shows the player message and the operator notice. These checks start the real client with portablemc 5.0.6 and an offline account (ADR-PDR-011). The client opens a game window, so they run on a desktop session and not in CI; the script closes the windows it opened.
+Some results depend on the real game client, which the join client only imitates: whether the client survives the T3 retry, which places the player a second time on one connection (ADR-PDR-012), and how it shows the player message and the operator notice. These checks start the real client with portablemc 5.0.6 and an offline account (ADR-PDR-011). The client opens a game window, so they run on a desktop session and not in CI; the script closes the windows it opened.
 
 Setup, once:
 
@@ -106,7 +106,9 @@ Setup, once:
 Dedicated server, vanilla client of the band: `./scripts/prod-smoke.ps1 -BandId <band> -Loader <loader> -SkipBuild -RealClient`. After the join client scenarios, a real client joins as an operator (`OpClient`) and stays, then real clients replay two scenarios:
 
 - S2 (`S2Client`, Forge and Fabric; on NeoForge the attachment is skipped by the game, T4): the client must show the player message.
-- S15 (`S15Client`): the failed placement sends a first login packet and the minimal profile a second one on the same connection. The client must stay connected for 30 seconds after the rescue, show a chat message sent after that time, be in the player list, show the player message, and log no disconnect, packet error or crash.
+- S15 (`S15Client`): the placement fails, and the minimal profile is placed on the same connection. The client must stay connected for 30 seconds after the rescue, show a chat message sent after that time, fall back when RCON lifts it 3 blocks (the server sees its height drop within 5 seconds), be in the player list, show the player message, and log no disconnect, packet error or crash.
+
+S2 checks the same fall. A client that got a second login packet passed every other check but this one: its player stayed in the air, and shook on screen (ARCHITECTURE.md, Cleanup after a failed placement).
 
 `OpClient` must show the operator notice of each rescue. Both clients are closed through their window, as a player closes them.
 

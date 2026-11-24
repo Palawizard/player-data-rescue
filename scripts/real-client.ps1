@@ -183,6 +183,31 @@ function Test-RealClientHealthy {
     return , $problems
 }
 
+function Get-PlayerHeight {
+    param([string]$Player)
+    $answer = Invoke-RconCommand -Command "data get entity $Player Pos"
+    if ($answer -notmatch '\[(-?[0-9.E-]+)d, (-?[0-9.E-]+)d, (-?[0-9.E-]+)d\]') { throw "no position for $Player in '$($answer.Trim())'" }
+    return [double]::Parse($Matches[2], [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Test-RealClientFalls {
+    # The client moves its own player: lifted 3 blocks, it falls back, and the server sees the
+    # player's height drop. A client whose player is not in the world it shows sends no move and
+    # stays in the air: that is how the vanilla client looked after a second login packet, frozen
+    # and shaking on screen while the server saw nothing wrong.
+    param([string]$Player)
+    $lifted = (Get-PlayerHeight -Player $Player) + 3
+    Invoke-RconCommand -Command "execute as $Player at @s run tp @s ~ ~3 ~" | Out-Null
+    $deadline = (Get-Date).AddSeconds(5)
+    $height = $lifted
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $height = Get-PlayerHeight -Player $Player
+        if ($height -lt $lifted - 1) { return @{ Detail = "fell from $lifted to $height"; Problem = $null } }
+    }
+    return @{ Detail = "stayed at $height"; Problem = "$Player stayed in the air 5 s after a lift of 3 blocks (height $lifted, then $height): the client does not move its player." }
+}
+
 # The real client scenarios of a dedicated server, run by prod-smoke.ps1 -RealClient after the
 # join client scenarios. Uses from smoke-scenarios.ps1: Invoke-PrepareJoin, Set-PlayerModes,
 # Invoke-RconCommand, Get-LatestLogLength, Wait-ForLog, Get-LogSince, Test-ScenarioIncidents,
@@ -204,6 +229,7 @@ function Invoke-RealClientScenario {
     $id = $Scenario.Id
     $player = $Scenario.Player
     $problems = @()
+    $fallDetail = 'not lifted'
     $offset = Invoke-PrepareJoin -Scenario $Scenario -Modes $Scenario.Prepare -RunSetup $false
     if (-not ((Get-LogSince -Offset $offset) -match $Scenario.Proof)) { throw "$id (real client) was not set up: no '$($Scenario.Proof)' line." }
     $before = Get-PlayerIncidents -Player $player
@@ -224,6 +250,9 @@ function Invoke-RealClientScenario {
             if (-not (Wait-RealClientLog -Client $client -Pattern ([regex]::Escape($marker)) -Seconds 20)) {
                 $problems += "$id (real client): $player did not get a chat message sent $realClientStaySeconds s after the rescue."
             }
+            $fall = Test-RealClientFalls -Player $player
+            $fallDetail = $fall.Detail
+            if ($fall.Problem) { $problems += "$id (real client): $($fall.Problem)" }
             $online = Invoke-RconCommand -Command 'list'
             if (-not $online.Contains($player)) { $problems += "$id (real client): $player is not in the player list ($($online.Trim()))." }
             $problems += Test-RealClientHealthy -Client $client
@@ -241,7 +270,7 @@ function Invoke-RealClientScenario {
     }
     # The message was checked in the client's own chat above.
     $problems += Test-ScenarioIncidents -Scenario @{ Id = $id; Player = $player } -Before $before -BotOutputs $playerMessage -JoinLog $joinLog
-    $line = "$id real client ${player}: $logins placement(s), stayed $realClientStaySeconds s, chat [$($chat -join ' | ')], closed cleanly: $closed"
+    $line = "$id real client ${player}: $logins placement(s), stayed $realClientStaySeconds s, $fallDetail, chat [$($chat -join ' | ')], closed cleanly: $closed"
     return @{ Line = $line; Problems = $problems }
 }
 
