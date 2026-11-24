@@ -197,3 +197,19 @@ Each rescue attempt (ADR-PDR-005) writes its candidate data where the game reads
 A placement that fails after the game added the player (T3) leaves a half-placed player in the player list and the level. Before the next attempt, that player is removed with `PlayerList#remove`, the game's own leave path, and every player instance of a failed attempt is marked so that `PlayerList#save` skips it: neither that removal nor the game's later disconnect saves its half-loaded state over the data being rescued. The connection is put back too, since the game never places a player twice on one connection: on 1.20.1 Forge's packet filters are removed, and on 1.21.1 and 26.3 a handler runs the protocol setup task of the next placement in place of the one the end of configuration left (ARCHITECTURE.md, Cleanup after a failed placement). Checked on 2026-11-16: without this, the second placement failed on every Tier A band except Fabric 1.20.1.
 
 Why: the game's read path includes the data fixers and the loaders' own events around the read (Forge's and NeoForge's player loading events, which Forge 1.21.1 fires inside the read itself). Feeding the tag through any other way would skip some of them on some band. On 26.3, Forge and NeoForge fire that event outside the read, in `PrepareSpawnTask$Ready#spawn`, so an attempt that only loads fires it itself, with the same arguments. Writing the file costs a few small writes on a rare event, and the backup is already on disk.
+
+## ADR-PDR-013: Restores go through the next join's read
+
+Status: Accepted.
+
+`/pdrescue restore` only queues entries (SPEC.md section 7.1). At the player's next join, before the game reads the data, the mod backs up the source files into a new incident, puts the queued entries into the data, and lets the game's own read decode them. The join's result decides each entry's status. A value that a restored entry replaces is kept as a quarantine entry of that backup incident. Decided by the maintainer on 2026-11-24, for online and offline players alike.
+
+The command `/pdrescue` is registered by a mixin at the end of the `Commands` constructor on every loader, since Fabric has no command event without Fabric API, and Forge and NeoForge fire theirs from that same constructor. The hook that applies a queue runs where the game is about to build and load the player: before `PlayerList#getPlayerForLogin` in the login handler on 1.20.1 and 1.21.1, and at the head of `PrepareSpawnTask#start` on 26.3, whose first read of the player file happens there, during configuration. On a join with nothing queued it is one set lookup.
+
+Options considered:
+
+- Restore an online player at once, through a decoder per kind of entry. Items and effects have game decoders, but a Fabric mod's key has none without Fabric API, and a Forge capability or a NeoForge attachment would need each loader's internals. ADR-PDR-001 rules out rebuilding those reads.
+- Disconnect an online player so that the next join applies the restore: the same result as the chosen way, but it throws the player out. The chosen way tells them to join again instead.
+- Refuse an attachment whose key the player already has, as the first SPEC said. Forge writes every capability at each save and a Fabric mod writes its key at each save, so while the mod is installed the key is always there and such a restore would always fail. The value is replaced instead and kept aside.
+
+Why: the game's read already handles every kind of entry, with the data fixers and the loader events around it (ADR-PDR-010), so a restored entry is decoded exactly as it would have been. The backup incident keeps the data from before the restore, and the replaced values stay restorable. Since a restored entry is never queued again, restoring twice cannot duplicate items.
