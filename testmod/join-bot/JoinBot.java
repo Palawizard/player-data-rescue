@@ -456,7 +456,13 @@ public final class JoinBot {
             loadedSent = true;
         }
         positionKnown = true;
-        reportPosition();
+        // On 26.3 the confirmation carries the position and the vanilla client sends nothing more
+        // (ClientPacketListener#handleMovePlayer); an extra position there makes a burst of
+        // teleports, such as the second login of a T3 retry, end in "moved too quickly". The
+        // reports of every second go on.
+        if (!profile.teleportIdFirst()) {
+            reportPosition();
+        }
     }
 
     /**
