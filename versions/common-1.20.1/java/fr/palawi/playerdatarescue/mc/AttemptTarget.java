@@ -47,12 +47,13 @@ final class AttemptTarget implements RescueTarget {
         HeldPackets.hold(connection);
         try {
             players.placeNewPlayer(connection, player);
-        } catch (RuntimeException | LinkageError e) {
+            // A packet the game sends can still throw here, as it would inside the placement.
+            HeldPackets.release(connection);
+        } catch (Exception | LinkageError e) {
             Join1201.discard(players, player);
             HeldPackets.drop(connection);
             throw e;
         }
-        HeldPackets.release(connection);
     }
 
     /**

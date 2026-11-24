@@ -94,12 +94,13 @@ public final class Join1211 implements GameJoin {
                 HeldPackets.hold(connection);
                 try {
                     players.placeNewPlayer(connection, player, cookie.get());
-                } catch (RuntimeException | LinkageError e) {
+                    // A packet the game sends can still throw here, as it would inside the placement.
+                    HeldPackets.release(connection);
+                } catch (Exception | LinkageError e) {
                     discard(players, player);
                     HeldPackets.drop(connection);
                     throw e;
                 }
-                HeldPackets.release(connection);
             }
         };
     }
