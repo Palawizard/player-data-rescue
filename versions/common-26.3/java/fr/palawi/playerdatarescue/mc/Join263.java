@@ -112,7 +112,6 @@ public final class Join263 implements GameJoin {
                 try {
                     spawnTask.get().spawnPlayer(connection, cookie.get());
                 } catch (RuntimeException e) {
-                    HeldPackets.drop(connection);
                     discardHalfPlaced();
                     throw e;
                 }
@@ -140,6 +139,7 @@ public final class Join263 implements GameJoin {
             RescueService.markFailed(half);
             players.remove(half);
         }
+        HeldPackets.drop(connection);
     }
 
     @Override

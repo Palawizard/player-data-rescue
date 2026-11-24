@@ -95,8 +95,8 @@ public final class Join1211 implements GameJoin {
                 try {
                     players.placeNewPlayer(connection, player, cookie.get());
                 } catch (RuntimeException e) {
-                    HeldPackets.drop(connection);
                     discard(players, player);
+                    HeldPackets.drop(connection);
                     throw e;
                 }
                 HeldPackets.release(connection);
@@ -123,6 +123,7 @@ public final class Join1211 implements GameJoin {
         if (half != null) {
             discard(server.getPlayerList(), half);
         }
+        HeldPackets.drop(connection);
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */

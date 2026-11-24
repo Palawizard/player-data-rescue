@@ -48,8 +48,8 @@ final class AttemptTarget implements RescueTarget {
         try {
             players.placeNewPlayer(connection, player);
         } catch (RuntimeException e) {
-            HeldPackets.drop(connection);
             Join1201.discard(players, player);
+            HeldPackets.drop(connection);
             throw e;
         }
         HeldPackets.release(connection);

@@ -73,7 +73,6 @@ abstract class ServerConfigurationPacketListenerImplMixin extends ServerCommonPa
             locals = LocalCapture.CAPTURE_FAILHARD)
     private void playerdatarescue$rescue(
             ServerboundFinishConfigurationPacket packet, CallbackInfo ci, Exception failure) {
-        HeldPackets.drop(connection);
         if (RescueService.onPlacementFailure(join(), failure)) {
             ci.cancel();
         }

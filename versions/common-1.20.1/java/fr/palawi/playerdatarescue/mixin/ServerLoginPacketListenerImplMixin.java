@@ -64,7 +64,6 @@ abstract class ServerLoginPacketListenerImplMixin {
             cancellable = true,
             locals = LocalCapture.CAPTURE_FAILHARD)
     private void playerdatarescue$rescue(CallbackInfo ci, Component refusal, ServerPlayer online, Exception failure) {
-        HeldPackets.drop(connection);
         if (RescueService.onPlacementFailure(new Join1201(server, connection, gameProfile), failure)) {
             ci.cancel();
         }
