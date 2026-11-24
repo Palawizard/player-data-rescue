@@ -37,6 +37,7 @@ It reads `pdrtest.properties` from the server folder on every call, one line per
 | `attachment-throws` | The test attachment's reader throws. |
 | `unreadable-attachment` | The test attachment is saved in a form its reader rejects, at every save. Without the mode the reader accepts both forms, like a fixed release. |
 | `throw-on-placement` | Placement throws at its end, whatever the data: from `PlayerLoggedInEvent` on Forge and NeoForge, and at the end of `PlayerList#placeNewPlayer` on Fabric, after the player was added to the player list. |
+| `placement-rejects-attachment` | Placement throws at the same point, but only when that player instance read the test attachment from its saved data: a data-related T3. A placement without the attachment, such as the minimal profile, gets past it. |
 | `host-data` | Fabric 1.20.1 and 1.21.1 only: while this player is online, the dedicated server writes their data into `level.dat` as `Data.Player` at each world save, as the integrated server does for its host. It produces the S8 fixture. |
 
 The attachment is a Forge capability under `ForgeCaps`, a NeoForge data attachment under `neoforge:attachments`, and on Fabric (no Fabric API) a top-level key written and read by a mixin, the way component libraries store theirs. The renames run right after the game wrote the file: Forge's and NeoForge's `PlayerEvent.SaveToFile`, and on Fabric a mixin at the end of `PlayerDataStorage#save`. The game writes the real data first (the item, the effect and the minecart are given through RCON), so a renamed file is what a save looks like after its mod was removed. These files are produced during the smoke run and never committed.
@@ -45,7 +46,7 @@ The attachment is a Forge capability under `ForgeCaps`, a NeoForge data attachme
 
 `testmod/join-bot/JoinBot.java` joins a real player without a game client (ADR-PDR-006). It needs no build: `java JoinBot.java --port 25566 --protocol 777 --name Bot --stay-seconds 20`. Protocols: 763 (1.20.1), 767 (1.21.1), 777 (26.3). It prints `[join-bot]` lines, including each system message it receives as `[join-bot] chat: <component>` (JSON on 1.20.1, network NBT on 1.21.1 and 26.3), and exits with 0 when it joined and stayed, 3 when the server disconnected it (the reason is printed), and 4 on a network error or timeout. It needs `online-mode=false`, and `white-list=false` on 26.3, whose server enables the whitelist by default.
 
-After each teleport, and then every second, the client reports its position (`ServerboundMovePlayerPacket.PosRot`: ids 21 on 1.20.1, 27 on 1.21.1 and 31 on 26.3), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket` (id 13). On 1.20.1 and 1.21.1 the server moves its chunk tracking only when the client reports a position, not when it accepts a teleport, so without the report a player teleported with RCON stays tracked at its join position. On 26.3 the server accepts one position per client tick and resets that limit on the tick end packet; a second position in the same tick disconnects the client with "Invalid move player packet received". The ids come from `ConnectionProtocol` (1.20.1) and from the `--reports` packet list (1.21.1, 26.3), the layout (three doubles, two floats, one flag byte) from each version's `ServerboundMovePlayerPacket`.
+After each teleport on 1.20.1 and 1.21.1, and then every second on every version, the client reports its position (`ServerboundMovePlayerPacket.PosRot`: ids 21 on 1.20.1, 27 on 1.21.1 and 31 on 26.3), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket` (id 13). On 1.20.1 and 1.21.1 the server moves its chunk tracking only when the client reports a position, not when it accepts a teleport, so without the report a player teleported with RCON stays tracked at its join position. On 26.3 the server accepts one position per client tick and resets that limit on the tick end packet; a second position in the same tick disconnects the client with "Invalid move player packet received". On 26.3 the teleport confirmation carries the position, and the vanilla client sends no position after it (`ClientPacketListener#handleMovePlayer`); the join client does the same, otherwise the burst of teleports of a T3 retry ends in "moved too quickly" and a disconnect. The ids come from `ConnectionProtocol` (1.20.1) and from the `--reports` packet list (1.21.1, 26.3), the layout (three doubles, two floats, one flag byte) from each version's `ServerboundMovePlayerPacket`.
 
 ## Failure scenarios
 
@@ -91,6 +92,23 @@ The measure covers the hook bodies only, not the time the game spends loading th
 ## Fixtures
 
 The core tests (`core/src/test`) read real player files and `level.dat` files from `core/src/test/resources/fixtures/`. They were saved by the dedicated servers of the smoke test, with the test mod; `fixtures/README.md` says how each one was made. The smoke test copies the player files of each scenario after its preparation joins to `build/prod-smoke/fixtures/<band>-<loader>/<scenario>/` (and the S8 `level.dat` on Fabric 1.20.1 and 1.21.1), so a fixture can be made again with one smoke run.
+
+## Real client checks
+
+Some results depend on the real game client, which the join client only imitates: whether the client takes a second login packet on one connection (the T3 retry, ADR-PDR-012), how it shows the player message and the operator notice, and the singleplayer host of S8. These checks start the real client with portablemc 5.0.6 and an offline account (ADR-PDR-011). The client opens a game window, so they run on a desktop session and not in CI; each script closes the windows it opened.
+
+Setup, once:
+
+1. Download portablemc 5.0.6 from its GitHub release page (`mindstorm38/portablemc`), check the archive with the project's PGP key, and unpack it outside the repository.
+2. Set `PDR_PORTABLEMC` to the `portablemc` binary (or pass `-Launcher`), and optionally `PDR_CLIENT_ROOT` to a folder for the game versions, libraries and assets (about 1.5 GB for the three vanilla clients; the default is `build/real-client/.minecraft`).
+3. Build the bands: `./scripts/build-all-version-bands.ps1 -SkipSmoke`.
+
+Dedicated server, vanilla client of the band: `./scripts/prod-smoke.ps1 -BandId <band> -Loader <loader> -SkipBuild -RealClient`. After the join client scenarios, a real client joins as an operator (`OpClient`) and stays, then real clients replay two scenarios:
+
+- S2 (`S2Client`, Forge and Fabric; on NeoForge the attachment is skipped by the game, T4): the client must show the player message.
+- S15 (`S15Client`): the failed placement sends a first login packet and the minimal profile a second one on the same connection. The client must stay connected for 30 seconds after the rescue, show a chat message sent after that time, be in the player list, show the player message, and log no disconnect, packet error or crash.
+
+`OpClient` must show the operator notice of each rescue. Both clients are closed through their window, as a player closes them.
 
 ## Manual check: S8, singleplayer host
 

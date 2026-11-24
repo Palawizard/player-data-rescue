@@ -99,7 +99,8 @@ When placement throws after the game added the player (a mod's login code, or th
 3. puts the connection back so that one more placement can run on it, which the game never does itself:
    - 1.20.1: Forge 47 adds its packet filters `forge:vanilla_filter` and `forge:forge_fixes` to the channel at each placement (`NetworkFilters#injectIfNecessary`) and throws when they are already there, so they are removed first. Fabric has no such handlers.
    - 1.21.1 and 26.3: placement sets the game protocol up with `Connection#setupInboundProtocol`, whose task only the `UnconfiguredPipelineHandler.Inbound` handler left by the end of configuration can run, and the first placement consumed it. A small outbound handler (`InboundReset`) takes its place: on the channel's event loop it removes the decoder of the failed placement and lets the task put the new one there. The client is already in the game protocol and keeps sending packets, so the decoder is swapped in one step, never left out;
-4. lets the next attempt build a new player and place it on the same connection, which sets a new game listener and sends the client a new login packet.
+4. lets the next attempt build a new player and place it on the same connection, which sets a new game listener and sends the client a new login packet;
+5. after that placement works, moves the teleport ids of the new listener past the last id the failed listener sent (`awaitingTeleport`, through an accessor), and teleports the player where it already is. Each listener numbers its teleports from 1, and the client confirms the teleport of every login it got. A listener that receives a confirmation of its current id while it waits for none disconnects the client with "Invalid move player packet received" (`ServerGamePacketListenerImpl#handleAcceptTeleportPacket`, the same on 1.20.1, 1.21.1 and 26.3). With the new ids, the confirmations of the failed placement carry ids the new listener does not wait for, and the game ignores them. Without this step the vanilla client was disconnected right after the rescue on 1.21.1 (2026-11-24), and so was the join client, depending on whether its first confirmation reached the old listener or the new one.
 
 When the last attempt fails too, the game's own catch disconnects the client, and the disconnect removes the last instance again through `PlayerList#remove`. Because both instances are marked, neither removal saves a half-loaded state over the player's file, which the rescue has put back to the original by then. Checked by S11 on every band: its diagnosis must rest on the test mod's own failure in the minimal profile's placement, not on an error of the retry. Without step 3, the retry failed on every band but Fabric 1.20.1 (`Duplicate handler name: forge:vanilla_filter`, or `unsupported message type: UnconfiguredPipelineHandler$$Lambda`).
 
@@ -130,7 +131,7 @@ The core splits the saved tag into units (`PlayerData`), whatever the loader: Fo
 
 ## Mixins
 
-- The placement guard and its return hook, the T2 hooks, the save skip and save invoker of `PlayerList`, and an accessor for the netty channel of `Connection`, listed per band under Hook points. Plain Mixin injectors and accessors only, no MixinExtras (ADR-PDR-009).
+- The placement guard and its return hook, the T2 hooks, the save skip and save invoker of `PlayerList`, an accessor for the netty channel of `Connection`, listed per band under Hook points, and an accessor for the teleport id of `ServerGamePacketListenerImpl` (`awaitingTeleport`, the same field on every Tier A band). Plain Mixin injectors and accessors only, no MixinExtras (ADR-PDR-009).
 - No `@Overwrite` and no `@Redirect`.
 - Forge 1.20.1 runs on SRG names and ships a refmap written by the mixin annotation processor; the other bands run on Mojang names or are remapped by Loom.
 
@@ -146,10 +147,10 @@ The core splits the saved tag into units (`PlayerData`), whatever the loader: Fo
 - Retrying the load on the same `ServerPlayer` is not safe: a partial load adds to effects (1.20.1 and 1.21.1), attribute modifiers, the recipe book, NeoForge attachments and Forge capabilities instead of replacing them. Each attempt builds a new `ServerPlayer` (ADR-PDR-005).
 - The smoke test joins real players through a headless client in `testmod/join-bot/` (ADR-PDR-006, [TESTING.md](TESTING.md)).
 - A player half-registered by a failed placement is removed before the next attempt and never saved (Cleanup after a failed placement above, ADR-PDR-010).
+- A data-related T3 ends with the player in the world: S15 places the minimal profile after a failed placement on every band, with the join client and with the vanilla client (ADR-PDR-012).
 
 ## Open questions
 
 - The units that vanilla drops without an exception (S1, S3, S4, and S2 and S13 on NeoForge) are trigger T4 in [SPEC.md](SPEC.md), a later milestone with its own hooks.
 - The 1.20.1 placement that waits for a player with the same UUID to leave (`DELAY_ACCEPT`) runs outside the guarded try, so a failure there is not rescued (Hook points, 1.20.1 gap).
 - The report's next step and the player message name `/pdrescue restore`, and SPEC.md section 3 asks for a clickable `/pdrescue show` in the operator message. The commands come with M3; until then the operator message has no link.
-- No automated scenario shows a rescued placement after a failed one (a data-related T3 that ends `joined`). S11 shows that the second placement runs to its end on every band, but with the join client, not the vanilla client. Showing it needs a test mode whose placement failure depends on the data, and a check with a real client.
