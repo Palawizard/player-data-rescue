@@ -81,9 +81,16 @@ public final class RescueService {
      * was rescued and is now in the world; false to let the game disconnect them as it would.
      */
     public static boolean onPlacementFailure(GameJoin join, Exception failure) {
-        // The hold hook of the failed placement timed itself; this join never reaches the normal
-        // path report, so that time must not end up in the next join's.
-        Timing.take(join.id());
+        try {
+            return rescueAfterPlacementFailure(join, failure);
+        } finally {
+            // The timed hooks of a failed join (the hold, and on 1.20.1 the read of each attempt)
+            // never reach the normal path report, so their time must not end up in the next join's.
+            Timing.take(join.id());
+        }
+    }
+
+    private static boolean rescueAfterPlacementFailure(GameJoin join, Exception failure) {
         if (bridge == null || !config.enabled()) {
             return false;
         }
