@@ -10,7 +10,12 @@ param(
     [switch]$SkipScenarios,
     [int]$ServerPort = 25566,
     [int]$RconPort = 25576,
-    [int]$TimeoutMinutes = 10
+    [int]$TimeoutMinutes = 10,
+    # After the scenarios, replay S2 and S15 with the real game client (real-client.ps1). Needs a
+    # desktop session and the portablemc launcher (-Launcher or PDR_PORTABLEMC, ADR-PDR-011).
+    [switch]$RealClient,
+    [string]$Launcher,
+    [string]$ClientRoot
 )
 
 # Production smoke test: install the loader's real dedicated server for one band, drop
@@ -19,10 +24,14 @@ param(
 # the file players install, not a dev run (gradlew runServer). Unless -SkipScenarios is
 # given, the dev-only test mod is installed too and the failure scenarios of
 # smoke-scenarios.ps1 run before the server is stopped, and then the server starts once more
-# without the release JAR (SPEC.md scenario S10).
+# without the release JAR (SPEC.md scenario S10). With -RealClient, the real game client
+# replays some of them after the join client.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 . (Join-Path $PSScriptRoot 'smoke-scenarios.ps1')
+. (Join-Path $PSScriptRoot 'real-client.ps1')
+
+if ($RealClient -and $SkipScenarios) { throw '-RealClient needs the scenarios: drop -SkipScenarios.' }
 
 $band = (Get-VersionMatrix).bands | Where-Object { $_.id -eq $BandId } | Select-Object -First 1
 if (-not $band) { throw "Unknown band '$BandId'." }
@@ -211,6 +220,11 @@ function Invoke-Server {
                     if ($WithoutMod) { Invoke-RemovedModCheck -ServerProcess $process -Deadline $deadline }
                     else { Invoke-SmokeScenarios -ServerProcess $process -Deadline $deadline }
                 } catch { $scenarioError = $_.Exception.Message }
+                # The real client runs even when a join client scenario failed: both results count.
+                if ($RealClient -and -not $WithoutMod -and -not $process.HasExited) {
+                    try { Invoke-RealClientScenarios -Context $realClientContext }
+                    catch { $scenarioError = (@($scenarioError, $_.Exception.Message) | Where-Object { $_ }) -join [Environment]::NewLine }
+                }
             }
             if ($started -and -not $stopSent) {
                 # The RCON listener can open a little after the "Done" line.
@@ -255,6 +269,17 @@ if ($Fresh -and (Test-Path -LiteralPath $serverDir)) { Remove-Item -LiteralPath 
 New-Item -ItemType Directory -Path $serverDir -Force | Out-Null
 
 $javaExe = Get-JavaExe -Version $band.java
+$realClientContext = $null
+if ($RealClient) {
+    $realClientContext = @{
+        Launcher = Get-PortableMc -Launcher $Launcher
+        Root     = Get-ClientRoot -ClientRoot $ClientRoot
+        Version  = Get-ClientVersion -Band $band -LoaderConfig $loaderConfig -Loader $Loader -Vanilla
+        RunRoot  = Join-Path $ProjectRoot "build/real-client/runs/$BandId-$Loader"
+    }
+    # Each client can take minutes to start the first time, while it downloads its version.
+    $TimeoutMinutes += 20
+}
 $modJar = Get-ModJar
 $testModJar = if ($SkipScenarios) { $null } else { Get-TestModJar }
 
