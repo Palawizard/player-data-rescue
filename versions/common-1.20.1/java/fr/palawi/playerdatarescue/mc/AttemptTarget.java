@@ -23,12 +23,19 @@ final class AttemptTarget implements RescueTarget {
     private final Connection connection;
     private final GameProfile profile;
     private final DataSource source;
+    private final StaleTeleports teleports;
 
-    AttemptTarget(MinecraftServer server, Connection connection, GameProfile profile, DataSource source) {
+    AttemptTarget(
+            MinecraftServer server,
+            Connection connection,
+            GameProfile profile,
+            DataSource source,
+            StaleTeleports teleports) {
         this.server = server;
         this.connection = connection;
         this.profile = profile;
         this.source = source;
+        this.teleports = teleports;
     }
 
     @Override
@@ -47,9 +54,10 @@ final class AttemptTarget implements RescueTarget {
         try {
             players.placeNewPlayer(connection, player);
         } catch (RuntimeException e) {
-            Join1201.discard(players, player);
+            Join1201.discard(players, player, teleports);
             throw e;
         }
+        teleports.placed(player);
     }
 
     /**

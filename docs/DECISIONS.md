@@ -198,6 +198,19 @@ A placement that fails after the game added the player (T3) leaves a half-placed
 
 Why: the game's read path includes the data fixers and the loaders' own events around the read (Forge's and NeoForge's player loading events, which Forge 1.21.1 fires inside the read itself). Feeding the tag through any other way would skip some of them on some band. On 26.3, Forge and NeoForge fire that event outside the read, in `PrepareSpawnTask$Ready#spawn`, so an attempt that only loads fires it itself, with the same arguments. Writing the file costs a few small writes on a rare event, and the backup is already on disk.
 
+## ADR-PDR-011: Real client checks through portablemc
+
+Status: Accepted.
+
+The checks that need the real game client (the second login packet of a T3 retry, and the player message and the operator notice as the client shows them) run the client with portablemc 5.0.6, a command-line launcher, with an offline account. `scripts/real-client.ps1` holds the launcher calls, and `prod-smoke.ps1 -RealClient` replays S2 and S15 with the vanilla client of the band on its dedicated server. The launcher is pinned by version: the scripts refuse any other `portablemc --version`. It is installed by hand outside the repository and found through `-Launcher` or `PDR_PORTABLEMC`, and it never goes into a mod JAR. The client opens a game window, so these checks run on a desktop session, not in CI.
+
+Options considered, checked on 2026-11-24:
+
+- HeadlessMC (headlesshq/headlessmc): its latest release is 3.0.0-RC9, a pre-release, and its README limits offline accounts to running the game headless in CI pipelines.
+- portablemc (mindstorm38/portablemc): release 5.0.6 of 2026-10-18, a single binary for Linux, macOS and Windows, signed with the project's PGP key. Offline accounts are a plain option (`-u <name>`), it installs the vanilla client and the Fabric, Forge and NeoForge clients of every Tier A band, and it starts the game straight into a server (`--join-server`) or a singleplayer world (`--join-world`) through the game's quick play arguments. It reports the game's process id (`launched <pid>` with `--output machine`), so a script can close that window and no other.
+
+Why: portablemc covers the three Tier A Minecraft versions and the three loaders with a stable release, and offline accounts are a supported use. The window is closed the way a player closes it (the window's close message on Windows, Hyprland's window close dispatcher on Linux, checked on Hyprland 0.57.2), so the game stops as it would for a player.
+
 ## ADR-PDR-013: Restores go through the next join's read
 
 Status: Accepted.

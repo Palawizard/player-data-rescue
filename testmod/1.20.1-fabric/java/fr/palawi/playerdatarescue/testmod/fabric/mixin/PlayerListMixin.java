@@ -24,9 +24,7 @@ abstract class PlayerListMixin {
     @Inject(method = "placeNewPlayer", at = @At("TAIL"))
     private void pdrtest$throwOnPlacement(Connection connection, ServerPlayer player, CallbackInfo ci) {
         String name = player.getGameProfile().getName();
-        if (TestModes.has(name, TestModes.THROW_ON_PLACEMENT)) {
-            throw TestModes.failure("placement of " + name);
-        }
+        TestModes.checkPlacement(name, player);
     }
 
     @Inject(method = "getSingleplayerData", at = @At("HEAD"), cancellable = true)

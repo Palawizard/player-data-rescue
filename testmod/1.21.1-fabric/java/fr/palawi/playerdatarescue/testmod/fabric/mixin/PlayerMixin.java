@@ -42,6 +42,7 @@ abstract class PlayerMixin {
             return;
         }
         String name = pdrtest$name();
+        TestModes.attachmentRead(this);
         if (TestModes.has(name, TestModes.ATTACHMENT_THROWS)) {
             throw TestModes.failure("reading attachment " + TestModes.ATTACHMENT_ID + " of " + name);
         }
