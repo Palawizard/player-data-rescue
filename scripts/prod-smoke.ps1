@@ -121,6 +121,9 @@ function Write-ServerConfig {
         'view-distance=4'
         'simulation-distance=4'
         'spawn-protection=0'
+        # The join client never falls: on a world whose spawn is above the ground, the server
+        # would kick it for flying before a scenario ends.
+        'allow-flight=true'
         'level-name=smokeworld'
     )
 }
