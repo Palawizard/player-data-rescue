@@ -134,11 +134,11 @@ public final class Join263 implements GameJoin {
 
     @Override
     public void discardHalfPlaced() {
+        teleports.failed(connection);
         PlayerList players = server.getPlayerList();
         ServerPlayer half = players.getPlayer(id());
         if (half != null) {
             RescueService.markFailed(half);
-            teleports.failed(half);
             players.remove(half);
         }
     }

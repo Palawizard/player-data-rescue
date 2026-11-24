@@ -54,7 +54,8 @@ final class AttemptTarget implements RescueTarget {
         try {
             players.placeNewPlayer(connection, player);
         } catch (RuntimeException e) {
-            Join1201.discard(players, player, teleports);
+            teleports.failed(connection);
+            Join1201.discard(players, player);
             throw e;
         }
         teleports.placed(player);

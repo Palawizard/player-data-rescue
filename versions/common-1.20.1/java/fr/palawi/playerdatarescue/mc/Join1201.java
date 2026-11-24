@@ -80,16 +80,16 @@ public final class Join1201 implements GameJoin {
 
     @Override
     public void discardHalfPlaced() {
+        teleports.failed(connection);
         ServerPlayer half = server.getPlayerList().getPlayer(id());
         if (half != null) {
-            discard(server.getPlayerList(), half, teleports);
+            discard(server.getPlayerList(), half);
         }
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */
-    static void discard(PlayerList players, ServerPlayer player, StaleTeleports teleports) {
+    static void discard(PlayerList players, ServerPlayer player) {
         RescueService.markFailed(player);
-        teleports.failed(player);
         if (players.getPlayers().contains(player)) {
             players.remove(player);
         }
