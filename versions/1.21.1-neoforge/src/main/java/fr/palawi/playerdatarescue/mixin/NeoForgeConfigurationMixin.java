@@ -53,10 +53,11 @@ abstract class NeoForgeConfigurationMixin extends ServerCommonPacketListenerImpl
     /** Before the game builds and loads the player: a queued restore goes into the data first. */
     @Inject(
             method = "handleConfigurationFinished",
-            at = @At(
-                    value = "INVOKE",
-                    target =
-                            "Lnet/minecraft/server/players/PlayerList;getPlayerForLogin(Lcom/mojang/authlib/GameProfile;Lnet/minecraft/server/level/ClientInformation;)Lnet/minecraft/server/level/ServerPlayer;"))
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/players/PlayerList;getPlayerForLogin(Lcom/mojang/authlib/GameProfile;Lnet/minecraft/server/level/ClientInformation;)Lnet/minecraft/server/level/ServerPlayer;"))
     private void playerdatarescue$beforeRead(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
         Join1211 join = join();
         RestoreService.beforeRead(join.id(), join.name(), join.worldDirectory(), join.minecraftVersion(), join::source);
