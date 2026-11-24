@@ -184,6 +184,8 @@ The mod uses only Mixin's own injectors and accessors: `@Inject` (with `cancella
 - T2: an `@Inject` at the `Logger.warn` call of the player file read that fails (`PlayerDataStorage#load`), and on 1.20.1 a `@ModifyVariable` on the tag the read returns, to load the `.dat_old` the game does not try on that version.
 - Persistence and cleanup: an `@Invoker` for `PlayerList#save`, an `@Inject` at the head of `PlayerList#save` that skips the player instances of failed attempts, and an `@Accessor` for the private netty channel of `Connection`, to put the connection back before another placement (ADR-PDR-010).
 
+Amended on 2026-11-24: an `@Accessor` of `ServerGamePacketListenerImpl#awaitingTeleport` lets a retry after a failed placement move the new listener's teleport ids past the failed one's (ADR-PDR-012).
+
 On Forge 1.20.1, which runs on SRG names, the mixin annotation processor of MixinGradle 0.7.38 (`org.spongepowered:mixin:0.8.5:processor`) writes `playerdatarescue.refmap.json` from the Mojang names in the source. The other bands run on Mojang names (Forge 1.21.1 since ADR-PDR-007) or are remapped by Loom, and need no refmap.
 
 Why: an injection inside the catch wraps the whole placement, whatever throws in it, without changing the call itself, so it does not conflict with other mods that redirect or wrap `placeNewPlayer`. A `@Redirect` of that call would. `CAPTURE_FAILHARD` makes a changed local layout fail when the class loads, which the production-JAR smoke test of every band would show, rather than skip the guard.
