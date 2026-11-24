@@ -276,31 +276,45 @@ function Invoke-RealClientScenario {
 }
 
 function Invoke-RealClientDisconnect {
-    # S11 with a real client: every placement fails, so the client never gets a login packet, only
-    # the game's "Invalid player data" disconnect (ARCHITECTURE.md, Cleanup after a failed
-    # placement). It must show that reason and log no packet error or crash.
+    # S11 with a real client, two joins. At the first, every placement fails, so the client never
+    # gets a login packet, only the game's "Invalid player data" disconnect (ARCHITECTURE.md,
+    # Cleanup after a failed placement). At the second no rescue is tried, and the disconnect lets
+    # out the packets the connection held. Each time the client must show the reason and log no
+    # packet error or crash. The 1.20.1 client shows the reason without logging it
+    # (ClientPacketListener#onDisconnect), so there the server's line is the proof.
     param([hashtable]$Context)
     $player = 'S11Client'
     $problems = @()
+    $lines = @()
     Invoke-PrepareJoin -Scenario @{ Id = 'S11'; Player = $player; Setup = @() } -Modes '' -RunSetup $false | Out-Null
     Set-PlayerModes -Player $player -Modes 'throw-on-placement'
-    $joinOffset = Get-LatestLogLength
-    $client = Start-RealClient -Launcher $Context.Launcher -Root $Context.Root -Version $Context.Version -JavaExe $javaExe `
-        -Name $player -GameDir (Join-Path $Context.RunRoot $player) -Port $ServerPort
-    try {
-        if (-not (Wait-ForLog -Offset $joinOffset -Pattern "$player lost connection" -Seconds 300)) {
-            $problems += "S11 (real client): $player was not disconnected."
-        } elseif (-not (Wait-RealClientLog -Client $client -Pattern 'Invalid player data' -Seconds 20)) {
-            $problems += "S11 (real client): $player did not show the reason 'Invalid player data'."
+    $logsReason = $band.compileTarget -ne '1.20.1'
+    foreach ($join in 1, 2) {
+        $joinOffset = Get-LatestLogLength
+        $client = Start-RealClient -Launcher $Context.Launcher -Root $Context.Root -Version $Context.Version -JavaExe $javaExe `
+            -Name $player -GameDir (Join-Path $Context.RunRoot $player) -Port $ServerPort
+        try {
+            if (-not (Wait-ForLog -Offset $joinOffset -Pattern "$player lost connection: Invalid player data" -Seconds 300)) {
+                $problems += "S11 (real client) join ${join}: $player was not disconnected with 'Invalid player data'."
+            } elseif ($logsReason -and -not (Wait-RealClientLog -Client $client -Pattern 'Invalid player data' -Seconds 20)) {
+                $problems += "S11 (real client) join ${join}: $player did not show the reason 'Invalid player data'."
+            } elseif (-not $logsReason) {
+                Start-Sleep -Seconds 5
+            }
+            $problems += @(Test-RealClientHealthy -Client $client | Where-Object { $_ -notmatch 'Client disconnected with reason|Disconnecting from server|Lost connection' })
+        } finally {
+            $closed = Close-RealClient -Client $client
         }
-        $problems += @(Test-RealClientHealthy -Client $client | Where-Object { $_ -notmatch 'Client disconnected with reason|Disconnecting from server|Lost connection' })
-    } finally {
-        $closed = Close-RealClient -Client $client
+        $joinLog = Get-LogSince -Offset $joinOffset
+        if ($joinLog -notmatch 'pdrtest: deliberate failure: placement of S11Client') { $problems += "S11 (real client) join ${join}: the join did not hit the test mod failure." }
+        if ($join -eq 2 -and $joinLog -notmatch 'no rescue is tried') { $problems += 'S11 (real client) join 2: the server log does not say that no rescue is tried.' }
+        $reason = 'not logged by this client'
+        if ($logsReason) {
+            $reason = "$(@((Get-RealClientLog -Client $client) -split "`r?`n" | Where-Object { $_ -match 'Invalid player data' }) | Select-Object -First 1)".Trim()
+        }
+        $lines += "join ${join}: client log '$reason', closed cleanly: $closed"
     }
-    $joinLog = Get-LogSince -Offset $joinOffset
-    if ($joinLog -notmatch 'pdrtest: deliberate failure: placement of S11Client') { $problems += "S11 (real client): the join did not hit the test mod failure." }
-    $reason = @((Get-RealClientLog -Client $client) -split "`r?`n" | Where-Object { $_ -match 'Invalid player data' }) | Select-Object -First 1
-    return @{ Line = "S11 real client ${player}: disconnected, client log '$("$reason".Trim())', closed cleanly: $closed"; Problems = $problems }
+    return @{ Line = "S11 real client ${player}: disconnected twice; $($lines -join '; ')"; Problems = $problems }
 }
 
 function Invoke-RealClientScenarios {
