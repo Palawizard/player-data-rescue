@@ -392,6 +392,73 @@ function Invoke-TeleportCheck {
     return $line
 }
 
+function Get-BrickCount {
+    # The bricks a player carries, counted by the game: "clear <player> <item> 0" removes nothing.
+    param([string]$Player)
+    $answer = (Invoke-RconCommand -Command "clear $Player minecraft:brick 0").Trim()
+    if ($answer -match 'Found (\d+) matching') { return [int]$Matches[1] }
+    if ($answer -match 'No items were found') { return 0 }
+    throw "S16: unexpected answer to the brick count: $answer"
+}
+
+function Invoke-RestoreJoin {
+    # Joins with a placement that works again, counts the bricks while the player is in, and leaves.
+    param([string]$Player)
+    Set-PlayerModes -Player $Player -Modes 'attach'
+    $offset = Get-LatestLogLength
+    $bot = Start-JoinBot -Player $Player -StaySeconds 8
+    try {
+        if (-not (Wait-ForLog -Offset $offset -Pattern "$Player\[[^\]]*\] logged in")) { throw "S16: $Player never logged in." }
+        Start-Sleep -Seconds 2
+        $bricks = Get-BrickCount -Player $Player
+    } finally {
+        $output = Wait-JoinBot -Bot $bot
+    }
+    if ($output -notmatch 'left after staying') { throw "S16: $Player could not stay: $output" }
+    Wait-ForLog -Offset $offset -Pattern "$Player left the game" | Out-Null
+    Start-Sleep -Seconds 2
+    return @{ Bricks = $bricks; Log = (Get-LogSince -Offset $offset); Output = $output }
+}
+
+function Invoke-RestoreCheck {
+    # SPEC.md scenario S16: S15's minimal profile set the whole inventory aside; an operator
+    # restores it while the player is offline, the next join brings the 12 bricks back once, and a
+    # second restore of the same entry changes nothing.
+    $player = 'S16Bot'
+    $scenario = @{ Id = 'S16'; Player = $player; Setup = @("item replace entity $player container.17 with minecraft:brick 12") }
+    Invoke-PrepareJoin -Scenario $scenario -Modes 'attach' -RunSetup $true | Out-Null
+    Set-PlayerModes -Player $player -Modes 'attach,placement-rejects-attachment'
+    $rescue = Wait-JoinBot -Bot (Start-JoinBot -Player $player -StaySeconds 4)
+    if ($rescue -notmatch 'left after staying') { throw "S16: the rescue join did not end in the world: $rescue" }
+    $incidents = @(Get-PlayerIncidents -Player $player)
+    if ($incidents.Count -ne 1) { throw "S16: $($incidents.Count) incident(s) after the rescue, expected 1." }
+    $incident = $incidents[0].Name
+    $listed = Invoke-RconCommand -Command "pdrescue list $player"
+    if (-not $listed.Contains($incident)) { throw "S16: /pdrescue list does not show $incident`: $listed" }
+    $shown = Invoke-RconCommand -Command "pdrescue show $player $incident"
+    if (-not $shown.Contains('section.Inventory')) { throw "S16: /pdrescue show does not list section.Inventory: $shown" }
+
+    $first = Invoke-RconCommand -Command "pdrescue restore $player $incident section.Inventory"
+    if ($first -notmatch 'will be restored at their next join') { throw "S16: the first restore answered: $first" }
+    $afterFirst = Invoke-RestoreJoin -Player $player
+    if ($afterFirst.Bricks -ne 12) { throw "S16: $($afterFirst.Bricks) brick(s) after the restore, expected 12." }
+    if ($afterFirst.Output -notmatch 'set-aside part of your saved data was restored') { throw 'S16: the player was not told about the restore.' }
+
+    $second = Invoke-RconCommand -Command "pdrescue restore $player $incident section.Inventory"
+    if ($second -notmatch 'Already restored, nothing to do: section.Inventory') { throw "S16: the second restore answered: $second" }
+    $afterSecond = Invoke-RestoreJoin -Player $player
+    if ($afterSecond.Bricks -ne 12) { throw "S16: $($afterSecond.Bricks) brick(s) after the second restore, expected 12." }
+
+    $report = Get-Content -LiteralPath (Join-Path $incidents[0].FullName 'report.json') -Raw | ConvertFrom-Json
+    $entry = @($report.entries | Where-Object { $_.id -eq 'section.Inventory' })[0]
+    if ($entry.status -ne 'restored') { throw "S16: section.Inventory is '$($entry.status)', expected restored." }
+    $all = @(Get-PlayerIncidents -Player $player)
+    $backups = @($all | Where-Object { (Get-Content -LiteralPath (Join-Path $_.FullName 'report.json') -Raw | ConvertFrom-Json).trigger -eq 'RESTORE' })
+    if ($all.Count -ne 2 -or $backups.Count -ne 1) { throw "S16: $($all.Count) incident(s) with $($backups.Count) restore backup(s), expected the rescue and one backup." }
+    if (-not (Test-Path -LiteralPath (Join-Path $backups[0].FullName 'original'))) { throw 'S16: the restore backup has no original/ folder.' }
+    return "S16 ${player}: restore queued offline, 12 bricks after the next join, second restore refused ('Already restored'), still 12 bricks; entry restored; one backup incident"
+}
+
 function Start-Operator {
     # An online operator for the S2 notice (SPEC.md step 7): joins, is made an operator, and stays.
     $offset = Get-LatestLogLength
@@ -539,6 +606,11 @@ function Invoke-SmokeScenarios {
             $failures += "$id failed: $($_.Exception.Message)"
             if ($scenarioServer.HasExited) { break }
         }
+    }
+    try {
+        $summary += Invoke-RestoreCheck
+    } catch {
+        $failures += $_.Exception.Message
     }
     try {
         $summary += Invoke-TeleportCheck
