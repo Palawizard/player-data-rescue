@@ -108,9 +108,12 @@ public final class Join263 implements GameJoin {
             public void place(NbtCompound data) {
                 source.write(data);
                 InboundReset.beforePlacement(connection);
+                HeldPackets.hold(connection);
                 try {
                     spawnTask.get().spawnPlayer(connection, cookie.get());
-                } catch (RuntimeException e) {
+                    // A packet the game sends can still throw here, as it would inside the placement.
+                    HeldPackets.release(connection);
+                } catch (Exception | LinkageError e) {
                     discardHalfPlaced();
                     throw e;
                 }
@@ -137,6 +140,7 @@ public final class Join263 implements GameJoin {
             RescueService.markFailed(half);
             players.remove(half);
         }
+        HeldPackets.drop(connection);
     }
 
     @Override

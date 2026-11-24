@@ -31,6 +31,8 @@ $scenarioDefinitions = @(
     @{ Id = 'S12'; Player = 'S12Bot'; Prepare = @(''); Join = @(''); Setup = @(); Proof = '' }
     @{ Id = 'S13'; Player = 'S13Bot'; Prepare = @('unreadable-attachment'); Join = @('unreadable-attachment', 'unreadable-attachment'); Setup = @();
         Proof = 'saved attachment pdrtest:broken of S13Bot as unreadable'; JoinProof = 'pdrtest: deliberate failure: attachment pdrtest:broken of S13Bot cannot read back' }
+    @{ Id = 'S15'; Player = 'S15Bot'; Prepare = @('attach'); Join = @('attach,placement-rejects-attachment'); Setup = @();
+        Proof = 'saved attachment pdrtest:broken of S15Bot as int'; JoinProof = 'pdrtest: deliberate failure: placement of S15Bot with attachment pdrtest:broken' }
 )
 
 # How each join ends with the rescue in place: 'invalid' is the "Invalid player data" disconnect,
@@ -47,6 +49,7 @@ $expectedOutcomes = @{
     'S11new' = 'invalid'
     'S12' = 'joined'
     'S13' = 'joined'
+    'S15' = 'joined'
 }
 
 # The incidents each scenario must leave in <world>/playerdatarescue/<uuid>/ (SPEC.md sections 3
@@ -73,6 +76,14 @@ $expectedIncidents = @{
     'S13' = @{ Count = 2; Trigger = 'T1'; Outcome = 'rescued'; Entry = 'attachment.pdrtest:broken'; Suspect = 'pdrtest'; Message = $playerMessage }
     'S13/fabric' = @{ Count = 2; Trigger = 'T1'; Outcome = 'rescued'; Entry = 'key.pdrtest:broken'; Suspect = 'pdrtest'; Message = $playerMessage }
     'S13/neoforge' = $null
+    # S15: the placement fails because of the attachment (T3), so the minimal profile is placed on
+    # the same connection and every other section is set aside whole, the attachment among them.
+    'S15' = @{ Count = 1; Trigger = 'T3'; Outcome = 'minimal_profile'; Includes = 'section.ForgeCaps'; Suspect = 'pdrtest'; Message = $playerMessage;
+        Report = 'could not join even with the broken parts set aside' }
+    'S15/fabric' = @{ Count = 1; Trigger = 'T3'; Outcome = 'minimal_profile'; Includes = 'key.pdrtest:broken'; Suspect = 'pdrtest'; Message = $playerMessage;
+        Report = 'could not join even with the broken parts set aside' }
+    'S15/neoforge' = @{ Count = 1; Trigger = 'T3'; Outcome = 'minimal_profile'; Includes = 'section.neoforge:attachments'; Suspect = 'pdrtest'; Message = $playerMessage;
+        Report = 'could not join even with the broken parts set aside' }
 }
 
 # SPEC.md scenario S12: the time this mod's hooks take on a normal join, logged when the server
@@ -283,6 +294,14 @@ function Test-ScenarioIncidents {
             $payload = Join-Path $folder.FullName ($report.entries[0].payload)
             if (-not (Test-Path -LiteralPath $payload)) { $problems += "$id $($folder.Name): no payload file $payload." }
         }
+        if ($expected.Includes) {
+            $entry = @($report.entries | Where-Object { $_.id -eq $expected.Includes }) | Select-Object -First 1
+            if (-not $entry) {
+                $problems += "$id $($folder.Name): set aside [$(@($report.entries | ForEach-Object { $_.id }) -join ', ')], none is $($expected.Includes)."
+            } elseif (-not (Test-Path -LiteralPath (Join-Path $folder.FullName $entry.payload))) {
+                $problems += "$id $($folder.Name): no payload file for $($expected.Includes)."
+            }
+        }
         if ($expected.Suspect -and (@($report.suspects | ForEach-Object { $_.modId }) -notcontains $expected.Suspect)) {
             $problems += "$id $($folder.Name): suspects [$(@($report.suspects | ForEach-Object { $_.modId }) -join ', ')] do not name $($expected.Suspect)."
         }
@@ -487,8 +506,16 @@ function Invoke-SmokeScenarios {
                 $summary += $line
                 if ($result.Outcome -ne $expected) { $failures += $line }
                 if ($result.Outcome -eq 'invalid' -and -not $placeFailed) { $failures += "$id disconnected without the 'Couldn't place player in world' log line." }
-                if ($id -eq 'S11' -and $j -eq 0 -and @([regex]::Matches($joinLog, 'S11Bot\[[^\]]*\] logged in')).Count -lt 2) {
-                    $failures += 'S11 first join: the minimal profile was not placed after the failed placement.'
+                if (@('S11', 'S15') -contains $id -and $j -eq 0 -and @([regex]::Matches($joinLog, "$($scenario.Player)\[[^\]]*\] logged in")).Count -lt 2) {
+                    $failures += "$id first join: the minimal profile was not placed after the failed placement."
+                }
+                # The client only gets the placement that worked (ARCHITECTURE.md, Cleanup after a failed placement).
+                # When no rescue is tried (S11's second join), the disconnect lets out the failed placement's packets.
+                $logins = @([regex]::Matches($botOutput, 'joined the world')).Count
+                $expectedLogins = @{ 'S15' = 1; 'S11new' = 0 }[$id]
+                if ($id -eq 'S11') { $expectedLogins = @(0, 1)[$j] }
+                if ($null -ne $expectedLogins -and $logins -ne $expectedLogins) {
+                    $failures += "$id join $($j + 1): the join client got $logins login packet(s), expected $expectedLogins."
                 }
                 if ($id -eq 'S11' -and $j -eq 1 -and $joinLog -notmatch 'no rescue is tried') {
                     $failures += 'S11 second join: the log does not say that no rescue is tried.'

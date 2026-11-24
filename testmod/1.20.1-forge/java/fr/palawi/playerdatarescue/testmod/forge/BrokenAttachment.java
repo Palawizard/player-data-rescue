@@ -47,6 +47,7 @@ final class BrokenAttachment implements ICapabilitySerializable<Tag> {
     @Override
     public void deserializeNBT(Tag tag) {
         String name = player.getGameProfile().getName();
+        TestModes.attachmentRead(player);
         if (TestModes.has(name, TestModes.ATTACHMENT_THROWS)) {
             throw TestModes.failure("reading attachment " + TestModes.ATTACHMENT_ID + " of " + name);
         }

@@ -83,6 +83,7 @@ public final class Join1201 implements GameJoin {
         if (half != null) {
             discard(server.getPlayerList(), half);
         }
+        HeldPackets.drop(connection);
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */

@@ -390,6 +390,10 @@ public final class JoinBot {
             send(new Buf(profile.id("playPongOut")).i32(packet.readInt()));
         } else if (id == profile.id("playLogin")) {
             joined = true;
+            // Every login is a new world for the client: as the vanilla client, it says again that
+            // it has loaded it (26.3), and waits for a teleport before it reports a position.
+            loadedSent = false;
+            positionKnown = false;
             log("joined the world");
             if (!profile.configurationPhase()) {
                 send(clientInformation(profile.id("playClientInformationOut")));
@@ -456,7 +460,11 @@ public final class JoinBot {
             loadedSent = true;
         }
         positionKnown = true;
-        reportPosition();
+        // On 26.3 the confirmation carries the position and the vanilla client sends nothing more
+        // (ClientPacketListener#handleMovePlayer). The reports of every second go on.
+        if (!profile.teleportIdFirst()) {
+            reportPosition();
+        }
     }
 
     /**

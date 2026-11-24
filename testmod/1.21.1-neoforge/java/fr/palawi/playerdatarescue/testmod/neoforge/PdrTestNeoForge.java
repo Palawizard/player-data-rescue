@@ -44,9 +44,7 @@ public final class PdrTestNeoForge {
     private static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         Player player = event.getEntity();
         String name = nameOf(player);
-        if (TestModes.has(name, TestModes.THROW_ON_PLACEMENT)) {
-            throw TestModes.failure("placement of " + name);
-        }
+        TestModes.checkPlacement(name, player);
         if (TestModes.has(name, TestModes.ATTACH) || TestModes.has(name, TestModes.UNREADABLE_ATTACHMENT)) {
             player.setData(BROKEN, new BrokenValue(name, 42));
         }

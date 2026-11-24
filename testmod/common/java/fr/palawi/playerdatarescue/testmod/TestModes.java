@@ -6,7 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Properties;
+import java.util.Set;
+import java.util.WeakHashMap;
 
 /**
  * Failure modes of the dev-only test mod, per player name, read from {@code pdrtest.properties}
@@ -37,6 +40,12 @@ public final class TestModes {
     /** Placement throws for this player, whatever the saved data. */
     public static final String THROW_ON_PLACEMENT = "throw-on-placement";
     /**
+     * Placement throws for this player only when the player instance read the test attachment
+     * from its saved data: a placement failure caused by the data (trigger T3), which a placement
+     * without that attachment gets past.
+     */
+    public static final String PLACEMENT_REJECTS_ATTACHMENT = "placement-rejects-attachment";
+    /**
      * While this player is online, the dedicated server writes their data into {@code level.dat}
      * as {@code Data.Player} at each world save, as the integrated server does for its host
      * (Fabric 1.20.1 and 1.21.1, for the SPEC.md scenario S8 fixture).
@@ -50,7 +59,31 @@ public final class TestModes {
     public static final String ATTACHMENT_ID = "pdrtest:broken";
     public static final int INVENTORY_SLOT = 17;
 
+    private static final Set<Object> READ_ATTACHMENT = Collections.newSetFromMap(new WeakHashMap<>());
+
     private TestModes() {}
+
+    /** The test attachment's reader ran on this player instance. */
+    public static synchronized void attachmentRead(Object player) {
+        READ_ATTACHMENT.add(player);
+    }
+
+    /**
+     * Throws at the end of placement for {@link #THROW_ON_PLACEMENT}, and for {@link
+     * #PLACEMENT_REJECTS_ATTACHMENT} when this player instance read the test attachment.
+     */
+    public static void checkPlacement(String playerName, Object player) {
+        if (has(playerName, THROW_ON_PLACEMENT)) {
+            throw failure("placement of " + playerName);
+        }
+        boolean read;
+        synchronized (TestModes.class) {
+            read = READ_ATTACHMENT.contains(player);
+        }
+        if (read && has(playerName, PLACEMENT_REJECTS_ATTACHMENT)) {
+            throw failure("placement of " + playerName + " with attachment " + ATTACHMENT_ID);
+        }
+    }
 
     public static boolean has(String playerName, String mode) {
         Properties properties = new Properties();
