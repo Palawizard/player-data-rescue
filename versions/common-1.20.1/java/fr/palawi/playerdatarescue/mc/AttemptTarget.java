@@ -47,7 +47,7 @@ final class AttemptTarget implements RescueTarget {
         HeldPackets.hold(connection);
         try {
             players.placeNewPlayer(connection, player);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | LinkageError e) {
             Join1201.discard(players, player);
             HeldPackets.drop(connection);
             throw e;

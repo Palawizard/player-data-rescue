@@ -111,7 +111,7 @@ public final class Join263 implements GameJoin {
                 HeldPackets.hold(connection);
                 try {
                     spawnTask.get().spawnPlayer(connection, cookie.get());
-                } catch (RuntimeException e) {
+                } catch (RuntimeException | LinkageError e) {
                     discardHalfPlaced();
                     throw e;
                 }

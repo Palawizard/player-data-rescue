@@ -94,7 +94,7 @@ public final class Join1211 implements GameJoin {
                 HeldPackets.hold(connection);
                 try {
                     players.placeNewPlayer(connection, player, cookie.get());
-                } catch (RuntimeException e) {
+                } catch (RuntimeException | LinkageError e) {
                     discard(players, player);
                     HeldPackets.drop(connection);
                     throw e;
