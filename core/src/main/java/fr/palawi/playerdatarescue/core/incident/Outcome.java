@@ -11,5 +11,7 @@ public enum Outcome {
     /** Both files were unreadable; the player joined as a new player. */
     UNREADABLE_FILE,
     /** Placement failed even with the minimal profile: the saved data is not the cause. */
-    NOT_DATA_RELATED
+    NOT_DATA_RELATED,
+    /** Restored entries went into the data: the data before is in original/, what they replaced is set aside. */
+    RESTORE_BACKUP
 }

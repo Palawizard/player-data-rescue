@@ -40,6 +40,16 @@ public final class Reports {
                 incident.playerName()
                         + "'s player file and its previous save could not be read (unreadable file), so they joined as"
                         + " a new player. Both files are kept in original/.";
+            case RESTORE_BACKUP ->
+                incident.entries().isEmpty()
+                        ? "An operator restored set-aside data for " + incident.playerName()
+                                + ". The saved data from before the restore is kept in original/."
+                        : "An operator restored set-aside data for " + incident.playerName()
+                                + ". The saved data from before the restore is kept in original/, and "
+                                + (incident.entries().size() == 1
+                                        ? "the value it replaced is"
+                                        : incident.entries().size() + " values it replaced are")
+                                + " set aside here.";
             case NOT_DATA_RELATED ->
                 incident.originals().isEmpty()
                         ? incident.playerName()
@@ -142,6 +152,10 @@ public final class Reports {
                         ? "check the server log around this time, and remove recently added or updated mods one by one."
                         : "report the error to " + mod + " with this file, or remove " + mod + " to let the player in.";
             case PREVIOUS_SAVE -> "nothing to do; the unreadable file is kept in original/.";
+            case RESTORE_BACKUP ->
+                incident.entries().isEmpty()
+                        ? "nothing to do; this is the backup of the restore."
+                        : "to undo the restore, run " + restore + " all.";
             case UNREADABLE_FILE -> "if the player needs their old data, ask for help with the files in original/.";
             default ->
                 mod == null
