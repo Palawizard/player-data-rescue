@@ -2,6 +2,7 @@ package fr.palawi.playerdatarescue.core.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -78,6 +79,22 @@ class PacketHoldTest {
         assertFalse(hold.holding());
         hold.hold();
         hold.drop();
+        assertFalse(hold.holding());
+    }
+
+    @Test
+    void aSendThatThrowsDuringReleaseEndsTheHold() {
+        hold.hold();
+        send("login", false);
+        hold.keep(
+                () -> {
+                    throw new IllegalStateException("refused packet");
+                },
+                false);
+        send("after the refused one", false);
+
+        assertThrows(IllegalStateException.class, hold::release);
+        assertEquals(List.of("login"), sent);
         assertFalse(hold.holding());
     }
 
