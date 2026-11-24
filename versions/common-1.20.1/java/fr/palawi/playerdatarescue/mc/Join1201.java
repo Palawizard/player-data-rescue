@@ -22,6 +22,7 @@ public final class Join1201 implements GameJoin {
     private final MinecraftServer server;
     private final Connection connection;
     private final GameProfile profile;
+    private final StaleTeleports teleports = new StaleTeleports();
 
     public Join1201(MinecraftServer server, Connection connection, GameProfile profile) {
         this.server = server;
@@ -61,7 +62,7 @@ public final class Join1201 implements GameJoin {
 
     @Override
     public RescueTarget attempts(DataSource source) {
-        return new AttemptTarget(server, connection, profile, source);
+        return new AttemptTarget(server, connection, profile, source, teleports);
     }
 
     @Override
@@ -81,13 +82,14 @@ public final class Join1201 implements GameJoin {
     public void discardHalfPlaced() {
         ServerPlayer half = server.getPlayerList().getPlayer(id());
         if (half != null) {
-            discard(server.getPlayerList(), half);
+            discard(server.getPlayerList(), half, teleports);
         }
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */
-    static void discard(PlayerList players, ServerPlayer player) {
+    static void discard(PlayerList players, ServerPlayer player, StaleTeleports teleports) {
         RescueService.markFailed(player);
+        teleports.failed(player);
         if (players.getPlayers().contains(player)) {
             players.remove(player);
         }

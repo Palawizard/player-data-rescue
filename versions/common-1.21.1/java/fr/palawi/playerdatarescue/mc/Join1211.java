@@ -32,6 +32,7 @@ public final class Join1211 implements GameJoin {
     private final GameProfile profile;
     private final ClientInformation clientInformation;
     private final Supplier<CommonListenerCookie> cookie;
+    private final StaleTeleports teleports = new StaleTeleports();
 
     public Join1211(
             MinecraftServer server,
@@ -97,6 +98,7 @@ public final class Join1211 implements GameJoin {
                     discard(players, player);
                     throw e;
                 }
+                teleports.placed(player);
             }
         };
     }
@@ -123,8 +125,9 @@ public final class Join1211 implements GameJoin {
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */
-    private static void discard(PlayerList players, ServerPlayer player) {
+    private void discard(PlayerList players, ServerPlayer player) {
         RescueService.markFailed(player);
+        teleports.failed(player);
         if (players.getPlayers().contains(player)) {
             players.remove(player);
         }
