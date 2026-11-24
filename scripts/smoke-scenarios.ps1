@@ -510,9 +510,12 @@ function Invoke-SmokeScenarios {
                     $failures += "$id first join: the minimal profile was not placed after the failed placement."
                 }
                 # The client only gets the placement that worked (ARCHITECTURE.md, Cleanup after a failed placement).
+                # When no rescue is tried (S11's second join), the disconnect lets out the failed placement's packets.
                 $logins = @([regex]::Matches($botOutput, 'joined the world')).Count
-                if ($id -eq 'S15' -and $logins -ne 1) {
-                    $failures += "S15: the join client got $logins login packet(s), expected only the minimal profile's."
+                $expectedLogins = @{ 'S15' = 1; 'S11new' = 0 }[$id]
+                if ($id -eq 'S11') { $expectedLogins = @(0, 1)[$j] }
+                if ($null -ne $expectedLogins -and $logins -ne $expectedLogins) {
+                    $failures += "$id join $($j + 1): the join client got $logins login packet(s), expected $expectedLogins."
                 }
                 if ($id -eq 'S11' -and $j -eq 1 -and $joinLog -notmatch 'no rescue is tried') {
                     $failures += 'S11 second join: the log does not say that no rescue is tried.'
