@@ -23,7 +23,8 @@ public final class PlayerData {
     private static final String EQUIPMENT = "equipment";
     private static final String ROOT_VEHICLE = "RootVehicle";
     private static final String RECIPE_BOOK = "recipeBook";
-    private static final List<String> ATTACHMENT_CONTAINERS = List.of("ForgeCaps", "neoforge:attachments");
+    /** The compounds that hold Forge capabilities and NeoForge attachments, by key. */
+    public static final List<String> ATTACHMENT_CONTAINERS = List.of("ForgeCaps", "neoforge:attachments");
 
     private final NbtCompound root;
     private final Map<Unit, Container> containers = new LinkedHashMap<>();

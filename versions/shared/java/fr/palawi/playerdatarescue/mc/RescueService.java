@@ -230,19 +230,19 @@ public final class RescueService {
             // The game saves the player again later, at the latest when they leave.
             LOGGER.error("[{}] {} was rescued, but saving them right away failed", ModInfo.MOD_ID, join.name(), e);
         }
-        if (incident == null) {
-            return true;
+        if (incident != null) {
+            LOGGER.warn(
+                    "[{}] rescued {} ({}, {}): {} part(s) set aside after {} attempt(s). Report: {}",
+                    ModInfo.MOD_ID,
+                    join.name(),
+                    result.trigger(),
+                    result.outcome().name().toLowerCase(Locale.ROOT),
+                    incident.entries().size(),
+                    result.attempts(),
+                    folder.resolve("report.txt"));
+            notify(join, incident, shown, result.outcome());
+            RecurringService.rescued(join, result);
         }
-        LOGGER.warn(
-                "[{}] rescued {} ({}, {}): {} part(s) set aside after {} attempt(s). Report: {}",
-                ModInfo.MOD_ID,
-                join.name(),
-                result.trigger(),
-                result.outcome().name().toLowerCase(Locale.ROOT),
-                incident.entries().size(),
-                result.attempts(),
-                folder.resolve("report.txt"));
-        notify(join, incident, shown, result.outcome());
         return true;
     }
 
@@ -343,6 +343,7 @@ public final class RescueService {
         boolean placed = join.placed();
         if (placed) {
             RestoreService.joined(join);
+            RecurringService.joined(join);
         }
         Timing.stop(join.id(), start);
         if (Timing.ENABLED) {

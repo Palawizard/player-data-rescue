@@ -10,11 +10,13 @@ import fr.palawi.playerdatarescue.core.ModInfo;
 import fr.palawi.playerdatarescue.core.incident.EntryStatus;
 import fr.palawi.playerdatarescue.core.incident.IncidentFiles;
 import fr.palawi.playerdatarescue.core.incident.IncidentStore;
+import fr.palawi.playerdatarescue.core.recurring.RecurringIssues;
 import fr.palawi.playerdatarescue.core.restore.RestorePending;
 import fr.palawi.playerdatarescue.core.restore.RestoreQueue;
 import fr.palawi.playerdatarescue.core.restore.Restorer;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -59,6 +61,10 @@ public final class PdrCommands {
                                 c -> restore(c, "all"),
                                 entryArgument(c -> restore(c, StringArgumentType.getString(c, "entry"))))))
                 .then(Commands.literal("dismiss")
+                        .then(Commands.literal("recurring")
+                                .then(Commands.argument("key", StringArgumentType.greedyString())
+                                        .suggests(RECURRING_KEYS)
+                                        .executes(c -> guarded(c, PdrCommands::dismissRecurring))))
                         .then(incidentArguments(
                                 c -> dismiss(c, "all"),
                                 entryArgument(c -> dismiss(c, StringArgumentType.getString(c, "entry"))))))
@@ -105,6 +111,18 @@ public final class PdrCommands {
             LOGGER.debug("[{}] no player suggestions", ModInfo.MOD_ID, e);
         }
         return SharedSuggestionProvider.suggest(names, builder);
+    };
+
+    private static final SuggestionProvider<CommandSourceStack> RECURRING_KEYS = (context, builder) -> {
+        List<String> keys = new ArrayList<>();
+        try {
+            RecurringService.issues(world(context.getSource().getServer()))
+                    .all()
+                    .forEach(i -> keys.add(i.key()));
+        } catch (IOException e) {
+            LOGGER.debug("[{}] no recurring key suggestions", ModInfo.MOD_ID, e);
+        }
+        return SharedSuggestionProvider.suggest(keys, builder);
     };
 
     private static final SuggestionProvider<CommandSourceStack> INCIDENTS = (context, builder) -> {
@@ -161,7 +179,6 @@ public final class PdrCommands {
                 players = IncidentFiles.players(root);
                 if (players.isEmpty()) {
                     say(c, Component.literal("No player has an incident."));
-                    return 1;
                 }
             } else {
                 players = List.of(require(c, argument).id());
@@ -197,10 +214,45 @@ public final class PdrCommands {
                                     .append(Texts.action("show", "/" + ROOT + " show " + id + " " + s.folder())));
                 }
             }
-            if (argument == null) {
+            RecurringIssues records =
+                    RecurringService.issues(world(c.getSource().getServer()));
+            List<RecurringIssues.Issue> issues = new ArrayList<>();
+            for (RecurringIssues.Issue issue : records.all()) {
+                if (argument == null || issue.players().containsKey(players.get(0))) {
+                    issues.add(issue);
+                }
+            }
+            if (!issues.isEmpty()) {
+                say(c, Component.literal("Recurring issues: " + issues.size()).withStyle(ChatFormatting.GOLD));
+                for (RecurringIssues.Issue issue : issues) {
+                    say(
+                            c,
+                            Component.literal("  " + issue.key() + " ("
+                                            + issue.suspect().orElse("no mod stands out") + "): "
+                                            + count(issue.count(), "failed join") + ", "
+                                            + String.join(", ", issue.players().values())
+                                            + ", last " + issue.last() + " ")
+                                    .append(Texts.action("dismiss", "/" + ROOT + " dismiss recurring " + issue.key())));
+                }
+            }
+            List<Path> unreadable = records.unreadable();
+            if (!unreadable.isEmpty()) {
+                say(
+                        c,
+                        Component.literal(count(unreadable.size(), "recurring issue record")
+                                        + " could not be read: "
+                                        + String.join(
+                                                ", ",
+                                                unreadable.stream()
+                                                        .map(f ->
+                                                                f.getFileName().toString())
+                                                        .toList()))
+                                .withStyle(ChatFormatting.RED));
+            }
+            if (argument == null && !players.isEmpty()) {
                 say(c, Component.literal("Details: /" + ROOT + " list <player>"));
             }
-            return players.size();
+            return Math.max(1, players.size());
         });
     }
 
@@ -311,6 +363,22 @@ public final class PdrCommands {
                                             + ". The data stays in the incident folder."));
             return dismissed.size();
         });
+    }
+
+    /** Closes a recurring issue: its record moves to recurring/closed/ with its payloads. */
+    private static int dismissRecurring(CommandContext<CommandSourceStack> context) throws IOException {
+        String key = StringArgumentType.getString(context, "key");
+        MinecraftServer server = context.getSource().getServer();
+        RecurringIssues issues = RecurringService.issues(world(server));
+        RecurringIssues.Issue issue =
+                issues.find(key).orElseThrow(() -> new IllegalArgumentException("No recurring issue for " + key + "."));
+        issues.close(issue, Instant.now());
+        RecurringService.dismissed(server, world(server), key);
+        say(
+                context,
+                Component.literal("Closed the recurring issue " + key + ". Its record is kept in "
+                        + IncidentStore.FOLDER + "/" + RecurringIssues.FOLDER + "/closed/."));
+        return 1;
     }
 
     private static int export(CommandContext<CommandSourceStack> context) throws IOException {

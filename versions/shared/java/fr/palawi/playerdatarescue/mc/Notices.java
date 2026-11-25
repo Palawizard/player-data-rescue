@@ -3,6 +3,7 @@ package fr.palawi.playerdatarescue.mc;
 import fr.palawi.playerdatarescue.core.attribution.Suspect;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
+import fr.palawi.playerdatarescue.core.recurring.RecurringIssues;
 import java.util.List;
 import java.util.stream.Collectors;
 import net.minecraft.ChatFormatting;
@@ -57,6 +58,30 @@ public final class Notices {
                 .withStyle(ChatFormatting.GOLD)
                 .append(" ")
                 .append(Texts.action("show", "/pdrescue show " + incident.playerId() + " " + incident.folder()));
+    }
+
+    /** To operators, once per server start for each recurring issue (SPEC.md section 4.4). */
+    public static Component recurring(RecurringIssues.Issue issue, String file) {
+        MutableComponent text = issue.suspect()
+                .map(mod -> Component.translatableWithFallback(
+                        "playerdatarescue.operator.recurring",
+                        "[Player Data Rescue] %s saves player data it cannot load back (%s). That data is set aside at"
+                                + " every login until %s is fixed. Report it to %s with the file below. File: %s",
+                        mod,
+                        issue.key(),
+                        mod,
+                        mod,
+                        file))
+                .orElseGet(() -> Component.translatableWithFallback(
+                        "playerdatarescue.operator.recurring_unknown",
+                        "[Player Data Rescue] A mod saves player data it cannot load back (%s), and no mod stands out."
+                                + " That data is set aside at every login until that mod is fixed. Report it to the"
+                                + " mod that owns this data, with the file below. File: %s",
+                        issue.key(),
+                        file));
+        return text.withStyle(ChatFormatting.GOLD)
+                .append(" ")
+                .append(Texts.action("dismiss", "/pdrescue dismiss recurring " + issue.key()));
     }
 
     /** To a player whose set-aside data came back at this join. */

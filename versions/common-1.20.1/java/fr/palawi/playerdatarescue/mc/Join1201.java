@@ -5,6 +5,7 @@ import fr.palawi.playerdatarescue.core.data.CoreValues;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
 import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
+import fr.palawi.playerdatarescue.core.recurring.RecurringIssues;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import fr.palawi.playerdatarescue.mixin.PlayerListAccess;
 import java.nio.file.Path;
@@ -32,6 +33,11 @@ public final class Join1201 implements GameJoin {
         this.server = server;
         this.connection = connection;
         this.profile = profile;
+    }
+
+    @Override
+    public Object server() {
+        return server;
     }
 
     @Override
@@ -161,5 +167,18 @@ public final class Join1201 implements GameJoin {
                 operator.sendSystemMessage(Notices.forOperators(incident, folder));
             }
         }
+    }
+
+    @Override
+    public int tellOperatorsRecurring(RecurringIssues.Issue issue, String file, int permissionLevel) {
+        int told = 0;
+        for (ServerPlayer operator : server.getPlayerList().getPlayers()) {
+            if (!operator.getUUID().equals(id())
+                    && server.getProfilePermissions(operator.getGameProfile()) >= permissionLevel) {
+                operator.sendSystemMessage(Notices.recurring(issue, file));
+                told++;
+            }
+        }
+        return told;
     }
 }

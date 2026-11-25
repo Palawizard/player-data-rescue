@@ -67,7 +67,7 @@ public record RescueConfig(
                 reader.integer("maxIncidentsPerPlayer", DEFAULTS.maxIncidentsPerPlayer, 1, 10_000),
                 reader.bool("useDatOldFallback", DEFAULTS.useDatOldFallback),
                 reader.bool("rescuePlacementFailures", DEFAULTS.rescuePlacementFailures),
-                reader.integer("recurringThreshold", DEFAULTS.recurringThreshold, 1, 1_000),
+                reader.integer("recurringThreshold", DEFAULTS.recurringThreshold, 2, 1_000),
                 reader.bool("logFullStackTraces", DEFAULTS.logFullStackTraces));
         if (!exists || reader.added) {
             try {
