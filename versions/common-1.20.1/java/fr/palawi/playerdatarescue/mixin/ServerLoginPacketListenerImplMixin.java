@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import fr.palawi.playerdatarescue.mc.HeldPackets;
 import fr.palawi.playerdatarescue.mc.Join1201;
 import fr.palawi.playerdatarescue.mc.RescueService;
+import fr.palawi.playerdatarescue.mc.RestoreService;
 import fr.palawi.playerdatarescue.mc.Timing;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
@@ -72,6 +73,24 @@ abstract class ServerLoginPacketListenerImplMixin {
         if (RescueService.onPlacementFailure(new Join1201(server, connection, gameProfile), failure)) {
             ci.cancel();
         }
+    }
+
+    /**
+     * Before the game loads the player, a queued restore goes into the data. Not before {@code
+     * getPlayerForLogin}: when the same player is still online, that call disconnects them and
+     * saves their data, which would replace the restored data. Here the old player is gone, both
+     * when the placement runs at once and when it was delayed until then.
+     */
+    @Inject(method = "placeNewPlayer", at = @At("HEAD"))
+    private void playerdatarescue$beforeRead(ServerPlayer player, CallbackInfo ci) {
+        Join1201 join = new Join1201(server, connection, gameProfile);
+        RestoreService.beforeRead(join.id(), join.name(), join.worldDirectory(), join.minecraftVersion(), join::source);
+    }
+
+    /** The game placed the player; also the end of a placement that was delayed. */
+    @Inject(method = "placeNewPlayer", at = @At("RETURN"))
+    private void playerdatarescue$placed(ServerPlayer player, CallbackInfo ci) {
+        RestoreService.joined(new Join1201(server, connection, gameProfile));
     }
 
     @Inject(method = "handleAcceptedLogin", at = @At("RETURN"))

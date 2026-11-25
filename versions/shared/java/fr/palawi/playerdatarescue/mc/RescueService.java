@@ -67,6 +67,18 @@ public final class RescueService {
         config = loaded.config();
     }
 
+    static boolean active() {
+        return bridge != null && config.enabled();
+    }
+
+    static LoaderBridge bridge() {
+        return bridge;
+    }
+
+    static RescueConfig config() {
+        return config;
+    }
+
     /** A player instance of a failed attempt: the game must not save it over the real data. */
     public static void markFailed(Object player) {
         FAILED_ATTEMPTS.add(player);
@@ -81,12 +93,17 @@ public final class RescueService {
      * was rescued and is now in the world; false to let the game disconnect them as it would.
      */
     public static boolean onPlacementFailure(GameJoin join, Exception failure) {
+        boolean rescued = false;
         try {
-            return rescueAfterPlacementFailure(join, failure);
+            rescued = rescueAfterPlacementFailure(join, failure);
+            return rescued;
         } finally {
             // The timed hooks of a failed join (the hold, and on 1.20.1 the read of each attempt)
             // never reach the normal path report, so their time must not end up in the next join's.
             Timing.take(join.id());
+            // Entries a queued restore put into this join's data are decided once the rescue,
+            // if any, has put the player in the world or given up.
+            RestoreService.afterPlacementFailure(join, rescued);
         }
     }
 
@@ -169,6 +186,7 @@ public final class RescueService {
             source.restore();
             throw e;
         }
+        RestoreService.rescued(join, result, folder);
         Incident incident;
         try {
             incident = IncidentRecorder.record(
@@ -322,6 +340,10 @@ public final class RescueService {
     public static void onLoginFinished(GameJoin join) {
         long start = Timing.start();
         Unreadable pending = UNREADABLE.isEmpty() ? null : UNREADABLE.remove(join.id());
+        boolean placed = join.placed();
+        if (placed) {
+            RestoreService.joined(join);
+        }
         Timing.stop(join.id(), start);
         if (Timing.ENABLED) {
             long[] cost = Timing.take(join.id());
@@ -332,7 +354,7 @@ public final class RescueService {
                     String.format(Locale.ROOT, "%.1f", cost[0] / 1000.0),
                     cost[1]);
         }
-        if (pending == null || !join.placed()) {
+        if (pending == null || !placed) {
             return;
         }
         try {

@@ -226,3 +226,29 @@ Checked on 2026-11-24 with the vanilla client of each Tier A band, started by po
 - With the hold, on every Tier A band, the vanilla client stays connected for 30 seconds after the rescue, falls back when lifted, shows a chat message sent after that time and the player message, and the server lists it as online; the join client of S15 gets one login packet. Results per band are in TESTING.md, Real client checks.
 
 Why: the player gets in at once, as if the first placement had worked, and the client never sees a state the game itself never produces. The disconnect-and-rejoin option would cost the player a second join for the same result. The cost on the normal path is a hold and a release around the placement call and a release in the return hook, and, for each packet the server sends while nothing is held, a callback object and one volatile read.
+
+## ADR-PDR-013: Restores go through the next join's read
+
+Status: Accepted.
+
+`/pdrescue restore` only queues entries (SPEC.md section 7.1). At the player's next join, before the game reads the data, the mod backs up the source files into a new incident, puts the queued entries into the data, and lets the game's own read decode them. The join's result decides each entry's status. A value that a restored entry replaces is kept as a quarantine entry of that backup incident. Decided by the maintainer on 2026-11-24, for online and offline players alike.
+
+The command `/pdrescue` is registered by a mixin at the end of the `Commands` constructor on every loader, since Fabric has no command event without Fabric API, and Forge and NeoForge fire theirs from that same constructor. The hook that applies a queue runs where the game is about to build and load the player: before `PlayerList#getPlayerForLogin` in the login handler on 1.20.1 and 1.21.1, and at the head of `PrepareSpawnTask#start` on 26.3, whose first read of the player file happens there, during configuration. On a join with nothing queued it is one set lookup.
+
+Options considered:
+
+- Restore an online player at once, through a decoder per kind of entry. Items and effects have game decoders, but a Fabric mod's key has none without Fabric API, and a Forge capability or a NeoForge attachment would need each loader's internals. ADR-PDR-001 rules out rebuilding those reads.
+- Disconnect an online player so that the next join applies the restore: the same result as the chosen way, but it throws the player out. The chosen way tells them to join again instead.
+- Refuse an attachment whose key the player already has, as the first SPEC said. Forge writes every capability at each save and a Fabric mod writes its key at each save, so while the mod is installed the key is always there and such a restore would always fail. The value is replaced instead and kept aside.
+
+Why: the game's read already handles every kind of entry, with the data fixers and the loader events around it (ADR-PDR-010), so a restored entry is decoded exactly as it would have been. The backup incident keeps the data from before the restore, and the replaced values stay restorable. Since a restored entry is never queued again, restoring twice cannot duplicate items.
+
+Amended on 2026-11-25 (the set-aside case decided by the maintainer):
+
+- An entry the join's rescue sets aside again is now in the new incident, so it gets the new status `set_aside_again` and is never queued again from its first incident. It was `restore_failed` and could be queued again, which let a restore of both incidents bring the same items back twice. `restore_failed` stays for entries that never reached the data, or whose data was put back.
+- When the player does not get in, the data is put back as it was before the restore. The rescue's own put-back writes the data it read, which is the merged data, so the entries would have stayed in the file while being marked as failed.
+- The entries on their way in are recorded on disk (`restore-pending.dat`) before the merged data is written, with a hash of the player file. A join that never reports its result (a crash, or a client that leaves during configuration on 26.3) is settled at the next join from that hash, instead of from memory.
+- On 1.20.1 the hook moves from before `PlayerList#getPlayerForLogin` to the head of `ServerLoginPacketListenerImpl#placeNewPlayer(ServerPlayer)`. `getPlayerForLogin` disconnects and saves a player who is still online under the same profile, and that save replaced the merged data.
+- On 26.3 the hook moves from the head of `PrepareSpawnTask#start` to before `PrepareSpawnTask#spawnPlayer` in `handleConfigurationFinished`, whose `Ready#spawn` reads the player file again. `start` can run on a network thread, and before the duplicate login check: a second connection of a player still online could apply the restore, be refused, and leave the online player to save over the merged data.
+- Each entry is followed by its incident and entry id, and the rescue's verdict is read from the tags the entry put into the data, not from the entry id: a stack restored to another slot, or two incidents with the same entry id, are decided apart.
+- When the data is put back, or was never written, the values the backup incident kept as replaced are in the player's data, so they are marked `restored` there instead of staying restorable from the backup. Two queued entries on the same key do not go back at the same join.

@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import fr.palawi.playerdatarescue.mc.HeldPackets;
 import fr.palawi.playerdatarescue.mc.Join263;
 import fr.palawi.playerdatarescue.mc.RescueService;
+import fr.palawi.playerdatarescue.mc.RestoreService;
 import fr.palawi.playerdatarescue.mc.Timing;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.configuration.ServerboundFinishConfigurationPacket;
@@ -69,6 +70,24 @@ abstract class ServerConfigurationPacketListenerImplMixin extends ServerCommonPa
         long start = Timing.start();
         HeldPackets.release(connection);
         Timing.stop(gameProfile.id(), start);
+    }
+
+    /**
+     * Before the game builds and loads the player in {@code Ready#spawn}, a queued restore goes
+     * into the data. Here the method runs on the server thread, after the duplicate login and
+     * {@code canPlayerLogin} checks; the first read of the file, in {@code PrepareSpawnTask#start},
+     * only decides the spawn, which a restore never changes.
+     */
+    @Inject(
+            method = "handleConfigurationFinished",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/network/config/PrepareSpawnTask;spawnPlayer(Lnet/minecraft/network/Connection;Lnet/minecraft/server/network/CommonListenerCookie;)Lnet/minecraft/server/level/ServerPlayer;"))
+    private void playerdatarescue$beforeRead(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
+        Join263 join = join();
+        RestoreService.beforeRead(join.id(), join.name(), join.worldDirectory(), join.minecraftVersion(), join::source);
     }
 
     @Inject(

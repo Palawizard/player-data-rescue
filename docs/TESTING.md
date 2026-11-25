@@ -69,10 +69,13 @@ Observed on 2026-11-16 on every Tier A band (Forge and Fabric 1.20.1; Forge, Fab
 | S12 | Valid data | joined, no incident; normal path under 100 µs on 2026-11-24, with the packet hold (Normal path cost below) | same | same |
 | S13 | Attachment saved in a form it cannot read back | joined at both joins; one incident per join (recurring issues are M3) | same | joined, attachment lost, no incident (T4) |
 | S15 (2026-11-24) | Placement fails only when the data holds the test attachment | joined with one login packet; one incident, T3, `minimal_profile`, `section.ForgeCaps` set aside with the other sections, suspect pdrtest | joined; same with `key.pdrtest:broken` | joined; same with `section.neoforge:attachments` |
+| S16 (2026-11-25) | S15, then the placement accepts the attachment again; `section.Inventory` (12 bricks in slot 17) restored offline twice by RCON | joined after each restore; the 12 bricks back in slot 17 once, the second restore answers `Already restored`, still 12 bricks; the entry `restored`; one `restore_backup` incident with `original/` | same | same |
 
 "Lost" means the game drops the unit while loading, and the next save writes the player without it. Those units are trigger T4 (SPEC.md section 2), a later milestone. The details per band are in [ARCHITECTURE.md](ARCHITECTURE.md), Hook points.
 
 For S2, an operator (`OpBot`, made operator over RCON) is online during the rescue and must receive the operator notice. Every bot speaks the vanilla protocol without this mod (it is not the real game client) and prints each system message it receives (`[join-bot] chat: ...`), which covers S9: the client connects normally and the messages decode as vanilla text components.
+
+The ways a restore join can end that a dedicated server does not produce on demand (a join that fails after the restore wrote the data, a rescue that sets a restored stack aside again, two incidents with the same entry id, a crash between the write and the join's end, stacks with no free slot) are covered by the core tests `RestoreJoinTest`, `RestoreBackupTest` and `RestorerTest`, on the real player files of S1Bot (Fabric 1.20.1), S2Bot (Forge 1.20.1) and S4Bot (Forge 1.21.1): none of them may leave the same items restorable twice.
 
 After the scenarios, the server is stopped and started again without the release JAR (S10): the world must load, `S12Bot` must join, the mod must log nothing, and every file under `playerdatarescue/` must keep its SHA-256.
 

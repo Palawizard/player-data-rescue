@@ -4,9 +4,12 @@ import com.mojang.authlib.GameProfile;
 import fr.palawi.playerdatarescue.core.data.CoreValues;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
+import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import fr.palawi.playerdatarescue.mixin.PlayerListAccess;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
@@ -15,6 +18,8 @@ import net.minecraft.network.Connection;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.PlayerList;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.LevelResource;
 
 /** A join on 1.20.1, from {@code ServerLoginPacketListenerImpl#handleAcceptedLogin}. */
@@ -113,6 +118,39 @@ public final class Join1201 implements GameJoin {
         if (player != null) {
             player.sendSystemMessage(Notices.forPlayer(outcome));
         }
+    }
+
+    @Override
+    public void tellRestored(int entries) {
+        ServerPlayer player = server.getPlayerList().getPlayer(id());
+        if (player != null) {
+            player.sendSystemMessage(Notices.restored(entries));
+        }
+    }
+
+    @Override
+    public List<NbtCompound> dropAtFeet(List<NbtCompound> stacks) {
+        ServerPlayer player = server.getPlayerList().getPlayer(id());
+        if (player == null) {
+            return stacks;
+        }
+        List<NbtCompound> unread = new ArrayList<>();
+        for (NbtCompound stack : stacks) {
+            ItemStack item;
+            try {
+                item = ItemStack.of(GameNbt.toGame(stack));
+            } catch (RuntimeException e) {
+                item = ItemStack.EMPTY;
+            }
+            if (item.isEmpty()) {
+                unread.add(stack);
+                continue;
+            }
+            ItemEntity entity = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), item);
+            entity.setNoPickUpDelay();
+            player.level().addFreshEntity(entity);
+        }
+        return unread;
     }
 
     @Override

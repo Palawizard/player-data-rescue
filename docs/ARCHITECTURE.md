@@ -108,6 +108,22 @@ A disconnect sent during a placement ends the hold, with the packets before it s
 
 When the last attempt fails too, the game's own catch disconnects the client, and the disconnect removes the last instance again through `PlayerList#remove`. Because both instances are marked, neither removal saves a half-loaded state over the player's file, which the rescue has put back to the original by then. Checked by S11 on every band: its diagnosis must rest on the test mod's own failure in the minimal profile's placement, not on an error of the retry. Without step 4, the retry failed on every band but Fabric 1.20.1 (`Duplicate handler name: forge:vanilla_filter`, or `unsupported message type: UnconfiguredPipelineHandler$$Lambda`).
 
+### Hooks of the commands and the restore (M3)
+
+Checked on 2026-11-24 in the same sources, for every Tier A band.
+
+| Band | Commands | Before the player's data is read |
+|---|---|---|
+| 1.20.1 | `@Inject` at the `TAIL` of `Commands#<init>(Commands$CommandSelection, CommandBuildContext)`, `@Shadow` of `dispatcher` | `@Inject` at the `HEAD` of `ServerLoginPacketListenerImpl#placeNewPlayer(ServerPlayer)V`, after `PlayerList#getPlayerForLogin` has disconnected and saved a player still online under the same profile; its `RETURN` ends the restore, also for a placement delayed to `tick` that works; a delayed placement that throws is outside the login handler's catch, and the next join settles its record (checked with `javap` on the 1.20.1 Mojang-named JAR on 2026-11-25) |
+| 1.21.1 | same constructor | `@Inject` before `PlayerList#getPlayerForLogin(GameProfile, ClientInformation)` in `ServerConfigurationPacketListenerImpl#handleConfigurationFinished`, after the method has moved to the server thread (NeoForge's copy of the guard mixin has the same hook) |
+| 26.3 | same constructor | `@Inject` before `PrepareSpawnTask#spawnPlayer(Connection, CommonListenerCookie)` in `ServerConfigurationPacketListenerImpl#handleConfigurationFinished`, on the server thread and after the duplicate login and `canPlayerLogin` checks (NeoForge's copy of the guard mixin has the same hook). `PrepareSpawnTask$Ready#spawn` reads the player file again through `PlayerList#loadPlayerData`, so it reads the merged data; the first read, in `PrepareSpawnTask#start`, only decides the spawn, which a restore never changes. `start` is not hooked: it can run on a network thread once the code of conduct is accepted, and before the duplicate login check (checked with `javap` on 2026-11-25) |
+
+Permission checks and clickable text differ by version and live in each `common-<minecraft>` folder (`Texts`): `CommandSourceStack#hasPermission(int)` and `new ClickEvent(Action.RUN_COMMAND, ...)` on 1.20.1 and 1.21.1; the `Commands.LEVEL_*` permission checks on `CommandSourceStack#permissions()` and `ClickEvent.RunCommand` on 26.3. Restored stacks with no free slot are decoded with `ItemStack.of(CompoundTag)` (1.20.1), `ItemStack.parse(HolderLookup.Provider, Tag)` (1.21.1) or `ItemStack.CODEC` with `RegistryOps` (26.3), and spawned as an `ItemEntity` with no pickup delay at the player's position.
+
+## Restore
+
+The core holds the restore (`core/restore`): `Restorer` runs the commands (queue, dismiss), `RestoreJoin` the join side (settle a past record, merge the queue, decide each entry from where the join ended), `RestoreMerge` puts entries into a copy of the player's data and says which tags each entry put there, and `RestoreQueue` and `RestorePending` are the queue file and the record of entries on their way in. The bands only call it from the hooks above (`RestoreService`): they hash and read the player's data, write the merged data where the game reads it (`DataSource#write`, as an attempt does), put the data back with the same `DataSource` when the player does not get in, and drop the stacks that found no slot. The backup incident and the record are written before the data changes. Every rule that keeps an entry restorable in one place only is tested in the core (`RestoreJoinTest`, `RestoreBackupTest`, `RestorerTest`).
+
 ## Rescue strategy
 
 1. Guard the placement with an injection inside the catch of the login handler (ADR-PDR-009). On a failure, hand over to the rescue flow; when it lets the player in, the handler returns there. The normal path is unchanged apart from two small hooks (S12).

@@ -26,7 +26,12 @@ public final class IncidentRecorder {
             Path folder,
             Instant time,
             Incident.Versions versions,
-            List<String> originals) {}
+            List<String> originals) {
+
+        public Context withFolder(Path otherFolder, List<String> otherOriginals) {
+            return new Context(playerId, playerName, otherFolder, time, versions, otherOriginals);
+        }
+    }
 
     /** Writes the payloads and reports of a rescue or diagnosis, and returns the incident. */
     public static Incident record(Context context, RescueResult result, Optional<Integer> dataVersion)
@@ -62,6 +67,26 @@ public final class IncidentRecorder {
                 result.coreChanges(),
                 result.suspects(),
                 result.lastFailure() == null ? null : ErrorInfo.of(result.lastFailure()));
+        IncidentStore.writeReports(context.folder(), incident);
+        return incident;
+    }
+
+    /** Writes the reports of the backup a restore makes before it changes the data. */
+    public static Incident recordBackup(
+            Context context, Trigger trigger, Outcome outcome, List<QuarantineEntry> entries) throws IOException {
+        Incident incident = new Incident(
+                context.playerId(),
+                context.playerName(),
+                context.folder().getFileName().toString(),
+                context.time(),
+                context.versions(),
+                trigger,
+                outcome,
+                context.originals(),
+                List.copyOf(entries),
+                List.of(),
+                List.<Suspect>of(),
+                null);
         IncidentStore.writeReports(context.folder(), incident);
         return incident;
     }
