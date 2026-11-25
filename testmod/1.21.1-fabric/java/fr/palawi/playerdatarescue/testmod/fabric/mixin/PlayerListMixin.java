@@ -26,9 +26,7 @@ abstract class PlayerListMixin {
     private void pdrtest$throwOnPlacement(
             Connection connection, ServerPlayer player, CommonListenerCookie cookie, CallbackInfo ci) {
         String name = player.getGameProfile().getName();
-        if (TestModes.has(name, TestModes.THROW_ON_PLACEMENT)) {
-            throw TestModes.failure("placement of " + name);
-        }
+        TestModes.checkPlacement(name, player);
     }
 
     @Inject(method = "getSingleplayerData", at = @At("HEAD"), cancellable = true)

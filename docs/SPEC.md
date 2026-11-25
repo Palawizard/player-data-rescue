@@ -7,7 +7,7 @@ Status: draft v1. Terms in italics are defined in the glossary at the end.
 | Context | Source of the joining player's data |
 |---|---|
 | Dedicated server, and LAN guests | `<world>/playerdata/<uuid>.dat` (gzip NBT), with `<uuid>.dat_old` as the previous save |
-| Singleplayer host and LAN host | The `Data.Player` compound in `<world>/level.dat`, with `level.dat_old` |
+| Singleplayer host and LAN host | 1.20.1 and 1.21.1: the `Data.Player` compound in `<world>/level.dat`, with `level.dat_old`. 26.3: the host's own player file, as for any other player |
 
 Both sources are handled. In every flow below, the *source file* is whichever applies.
 
@@ -37,7 +37,7 @@ When T1, T2 or T3 occurs for player P:
 1. Backup. Copy the source file and its `_old` counterpart, unchanged, into the *incident* folder. If the copy fails, stop and fall back to vanilla behaviour, with an error in the log. The mod never continues without a backup.
 2. Parse. Read the raw NBT root. If parsing fails (T2), try the `_old` file. If both fail, P starts as a new player, and the incident records "unreadable file".
 3. Salvage. Rebuild P section by section (§4). Each section loads on its own. A failure quarantines that section or that single entry, and salvage continues.
-4. Place. Place P in the world with the salvaged data. If placement fails, retry once with the minimal profile. If that fails too, the failure is not data-related (§2).
+4. Place. Place P in the world with the salvaged data. If placement fails, retry once with the minimal profile. If that fails too, the failure is not data-related (§2). A retry after a failed placement runs on the same connection: the client only gets the packets of the placement that worked, and stays connected (ADR-PDR-012).
 5. Persist. Save P's new state through the normal save path straight away, so the broken data is not read again on the next join. The original file is already in the incident folder.
 6. Report. Write `report.txt` and `report.json` (§6), and log a one-line summary with the incident path.
 7. Notify, if enabled (§8). P sees "Some of your saved data could not be loaded and was set aside. An admin can restore it." Online operators see the player, the number of quarantined parts, the suspects and a clickable `/pdrescue show` command.
@@ -106,6 +106,8 @@ At most three suspects, without duplicates. Reports say "most likely", never "ca
       quarantine/<entry-id>.nbt binary payload of each entry
       report.txt
       report.json
+    restore-queue.json          entries queued by /pdrescue restore (§7.1)
+    restore-pending.dat         entries on their way into the data at a join (§7.1)
   recurring/
     <key>.json                  recurring issues (§4.4)
 ```
@@ -114,7 +116,8 @@ At most three suspects, without duplicates. Reports say "most likely", never "ca
 - `report.txt` starts with one sentence saying what happened. It then gives the player name and UUID, the date, the Minecraft, loader and mod versions, and the trigger. Next comes the list of kept and set-aside parts in plain words (for example "Slot 17: 12 brass ingots (create)"), followed by the suspects and the next step (for example "reinstall create, then run `/pdrescue restore <player> <incident>`"). The raw errors are in an appendix.
 - A *diagnosis report* (not data-related failures, §2) has the same layout, but says that the saved data is not the cause and that nothing was changed.
 - `report.json` holds the same content with a schema version.
-- Retention keeps the latest `maxIncidentsPerPlayer` incidents (default 20). Incidents that still have quarantined entries are never pruned automatically.
+- Retention keeps the latest `maxIncidentsPerPlayer` incidents (default 20). Incidents that still have an entry that can be restored (`quarantined` or `restore_failed`) are never pruned automatically.
+- An entry's status is `quarantined`, `restored`, `dismissed`, `restore_failed` or `set_aside_again` (§7.1).
 
 ## 7. Commands
 
@@ -139,11 +142,18 @@ Decided on 2026-11-24 (ADR-PDR-013): a restore always goes through the game's ow
 - At the next join, before the game reads P's data, the mod copies the source files into a new incident (trigger `RESTORE`, outcome `restore_backup`), then puts the entries into the data. The game's read then decodes each entry, as it decodes the rest. Without that backup nothing is changed, and the entries stay queued.
 - Inventory and ender chest entries go back into their original slot if it is empty, otherwise into the first free slot of the same container, otherwise they drop at P's feet with no pickup delay once P is in the world, and the drop is logged.
 - Effects come back with their saved remaining duration.
-- Attachments, mod keys, effects and the recipe book replace what P has under the same key. The value they replace is kept as a quarantine entry of the backup incident, so it can be restored in turn. Entries are never merged.
+- Attachments, mod keys, effects and the recipe book replace what P has under the same key. The value they replace is kept as a quarantine entry of the backup incident, so it can be restored in turn. Entries are never merged, and two queued entries on the same key do not go back at the same join: the second becomes `restore_failed` and can be queued again after that join.
 - Vehicles cannot be restored in v1. The payload is kept for manual recovery.
 - An entry saved with another data version than P's current data is refused, since the game would read it with the wrong data fixes.
-- After the join, each entry put back becomes `restored`, and restoring it again does nothing. This is what prevents item duplication. Queuing the same entry twice before the join restores it once.
-- An entry that cannot go back, or that the join sets aside again, becomes `restore_failed` with the reason, and keeps its payload. It can be queued again.
+- The entries on their way into the data are recorded in `<world>/playerdatarescue/<uuid>/restore-pending.dat` before the data changes, with a hash of P's file as it was. Until the join's result settles them, they are neither queued nor dismissed again.
+- Where the join ends decides each entry. An entry's payload is restorable from one place at a time, so no restore brings the same items back twice.
+  - P is in the world without a rescue: each entry becomes `restored`, and restoring it again does nothing. Queuing the same entry twice before the join restores it once.
+  - P is in the world after a rescue of that join: an entry the rescue set aside again, or every entry when P did not join with the salvaged data, becomes `set_aside_again`, with the new incident in its reason. It is restored from that incident, and never queued again from this one. The other entries become `restored`.
+  - P is not in the world (the failure is not data-related, the rescue is off or did not run): P's data is put back as it was before the restore, the half-placed player is removed without a save, and each entry becomes `restore_failed`. It can be queued again. The values the backup incident kept as replaced are in P's data again, so they become `restored` there.
+  - The join never reports its result (the server stops, or P leaves between the read and the placement): the next join of P settles it. If P's file is still the one from before the restore, the entries are queued again and the replaced values of the backup become `restored`; otherwise the data holds the entries, and they become `restored`.
+- Stacks that drop at P's feet are not part of the data, so they drop whenever P gets in, even after a rescue or at a later join. A stack the game cannot read is logged with its data and not dropped.
+- An entry that cannot go back (missing payload, another data version, a section with an element that is not a stack or an effect) becomes `restore_failed` with the reason and keeps its payload; vehicles are refused by the command already. When no entry of a join goes into the data, no backup incident is made.
+- Naming a dismissed entry in `restore` sets it aside again (`quarantined`) before it is queued, so retention keeps its incident.
 
 ## 8. Configuration (`config/playerdatarescue.json`)
 
@@ -174,13 +184,14 @@ S1, S3, S4 and S7, and S2, S13 and S14 on NeoForge, depend on T4. They are check
 | S5 | `<uuid>.dat` is truncated and `.dat_old` is valid. | P joins. | P joins with the `.dat_old` data. Both originals are backed up. The trigger is T2. |
 | S6 | Both files are unreadable. | P joins. | P joins as a new player. The originals are kept and the report says "unreadable file". |
 | S7 | S1 happened, then X is reinstalled. | An operator runs `restore all`. | The slot 17 item comes back once. A second `restore all` changes nothing. |
-| S8 | Singleplayer world whose host data in `level.dat` has S2's broken attachment (Forge or Fabric). | The world opens. | Same as S2, with the `level.dat` copies in `original/`. |
+| S8 | Singleplayer world whose host data has S2's broken attachment (Forge or Fabric). | The world opens. | Same as S2, with copies of the host data in `original/` (`level.dat` and `level.dat_old` on 1.20.1 and 1.21.1, the player file and its `.dat_old` on 26.3). |
 | S9 | Dedicated server with the mod, client without it. | Any scenario. | The client connects normally. Messages use vanilla text components only. |
 | S10 | The mod is removed after incidents were recorded. | The world loads. | The world loads normally, and the `playerdatarescue/` folder is ignored. |
 | S11 | The test mod throws on every placement, whatever the data. | P joins twice. | Both joins end with the vanilla disconnect. One incident and one diagnosis report are written, saying the data is not the cause and naming the test mod. The second join does not retry a rescue. Nothing loops or crashes. |
 | S12 | Valid player data. | P joins. | No incident and no file written. The extra work on the normal path is under 1 ms. |
 | S13 | The test mod saves an attachment it cannot read back. | P joins and leaves four times. | The first joins create incidents. From the third consecutive failure the key becomes a recurring issue: one record, operators told once, and no new incident for that key. |
 | S14 | S13, then the test mod is switched to a fixed behaviour. | P joins. | The attachment loads, and the recurring record is closed automatically. |
+| S15 | The test mod's placement fails only when P's saved data holds its attachment (a data-related T3). | P joins with the vanilla client. | P joins with the minimal profile on the same connection, the client stays connected and moves its player. One incident: T3, minimal profile, the attachment set aside with the other sections, the test mod as suspect. |
 | S16 | S15, then the test mod's placement accepts the attachment again. | An operator runs `restore` for the whole inventory twice, and P joins after each. | The stacks come back once, in their slots, and the second restore says the entry is already restored. The data before the restore is backed up in a new incident. |
 
 ## Glossary

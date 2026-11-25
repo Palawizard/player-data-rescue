@@ -8,6 +8,8 @@ import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import fr.palawi.playerdatarescue.mixin.PlayerListAccess;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -117,9 +119,12 @@ public final class Join263 implements GameJoin {
             public void place(NbtCompound data) {
                 source.write(data);
                 InboundReset.beforePlacement(connection);
+                HeldPackets.hold(connection);
                 try {
                     spawnTask.get().spawnPlayer(connection, cookie.get());
-                } catch (RuntimeException e) {
+                    // A packet the game sends can still throw here, as it would inside the placement.
+                    HeldPackets.release(connection);
+                } catch (Exception | LinkageError e) {
                     discardHalfPlaced();
                     throw e;
                 }
@@ -146,6 +151,7 @@ public final class Join263 implements GameJoin {
             RescueService.markFailed(half);
             players.remove(half);
         }
+        HeldPackets.drop(connection);
     }
 
     @Override
@@ -178,23 +184,31 @@ public final class Join263 implements GameJoin {
     }
 
     @Override
-    public void dropAtFeet(java.util.List<fr.palawi.playerdatarescue.core.nbt.NbtCompound> stacks) {
+    public List<NbtCompound> dropAtFeet(List<NbtCompound> stacks) {
         ServerPlayer player = server.getPlayerList().getPlayer(id());
         if (player == null) {
-            return;
+            return stacks;
         }
-        for (fr.palawi.playerdatarescue.core.nbt.NbtCompound stack : stacks) {
-            ItemStack item = ItemStack.CODEC
-                    .parse(RegistryOps.create(NbtOps.INSTANCE, player.registryAccess()), GameNbt.toGame(stack))
-                    .result()
-                    .orElse(ItemStack.EMPTY);
+        List<NbtCompound> unread = new ArrayList<>();
+        for (NbtCompound stack : stacks) {
+            ItemStack item;
+            try {
+                item = ItemStack.CODEC
+                        .parse(RegistryOps.create(NbtOps.INSTANCE, player.registryAccess()), GameNbt.toGame(stack))
+                        .result()
+                        .orElse(ItemStack.EMPTY);
+            } catch (RuntimeException e) {
+                item = ItemStack.EMPTY;
+            }
             if (item.isEmpty()) {
+                unread.add(stack);
                 continue;
             }
             ItemEntity entity = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), item);
             entity.setNoPickUpDelay();
             player.level().addFreshEntity(entity);
         }
+        return unread;
     }
 
     @Override

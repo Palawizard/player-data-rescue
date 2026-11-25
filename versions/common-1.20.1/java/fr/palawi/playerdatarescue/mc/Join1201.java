@@ -4,9 +4,12 @@ import com.mojang.authlib.GameProfile;
 import fr.palawi.playerdatarescue.core.data.CoreValues;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
+import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import fr.palawi.playerdatarescue.mixin.PlayerListAccess;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
@@ -85,6 +88,7 @@ public final class Join1201 implements GameJoin {
         if (half != null) {
             discard(server.getPlayerList(), half);
         }
+        HeldPackets.drop(connection);
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */
@@ -125,20 +129,28 @@ public final class Join1201 implements GameJoin {
     }
 
     @Override
-    public void dropAtFeet(java.util.List<fr.palawi.playerdatarescue.core.nbt.NbtCompound> stacks) {
+    public List<NbtCompound> dropAtFeet(List<NbtCompound> stacks) {
         ServerPlayer player = server.getPlayerList().getPlayer(id());
         if (player == null) {
-            return;
+            return stacks;
         }
-        for (fr.palawi.playerdatarescue.core.nbt.NbtCompound stack : stacks) {
-            ItemStack item = ItemStack.of(GameNbt.toGame(stack));
+        List<NbtCompound> unread = new ArrayList<>();
+        for (NbtCompound stack : stacks) {
+            ItemStack item;
+            try {
+                item = ItemStack.of(GameNbt.toGame(stack));
+            } catch (RuntimeException e) {
+                item = ItemStack.EMPTY;
+            }
             if (item.isEmpty()) {
+                unread.add(stack);
                 continue;
             }
             ItemEntity entity = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), item);
             entity.setNoPickUpDelay();
             player.level().addFreshEntity(entity);
         }
+        return unread;
     }
 
     @Override

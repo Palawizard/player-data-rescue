@@ -33,7 +33,8 @@ public interface GameJoin {
 
     /**
      * Removes the player that a failed placement left in the player list, without saving it
-     * (ARCHITECTURE.md, Rescue strategy). Does nothing when there is none.
+     * (ARCHITECTURE.md, Rescue strategy), then drops the packets the connection held for the
+     * client since that placement started, the removal's own included.
      */
     void discardHalfPlaced();
 
@@ -50,9 +51,9 @@ public interface GameJoin {
 
     /**
      * Drops restored stacks that found no free slot at the player's feet, with no pickup delay
-     * (SPEC.md section 7.1). Each stack is decoded by the game.
+     * (SPEC.md section 7.1). Each stack is decoded by the game; returns those it could not read.
      */
-    void dropAtFeet(List<NbtCompound> stacks);
+    List<NbtCompound> dropAtFeet(List<NbtCompound> stacks);
 
     /**
      * Tells every online operator except the joining player about a recurring issue; returns how

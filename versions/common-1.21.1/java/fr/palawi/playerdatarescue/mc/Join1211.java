@@ -8,6 +8,8 @@ import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import fr.palawi.playerdatarescue.mixin.PlayerListAccess;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 import net.minecraft.SharedConstants;
@@ -93,10 +95,14 @@ public final class Join1211 implements GameJoin {
                 InboundReset.beforePlacement(connection);
                 PlayerList players = server.getPlayerList();
                 ServerPlayer player = players.getPlayerForLogin(profile, clientInformation);
+                HeldPackets.hold(connection);
                 try {
                     players.placeNewPlayer(connection, player, cookie.get());
-                } catch (RuntimeException e) {
+                    // A packet the game sends can still throw here, as it would inside the placement.
+                    HeldPackets.release(connection);
+                } catch (Exception | LinkageError e) {
                     discard(players, player);
+                    HeldPackets.drop(connection);
                     throw e;
                 }
             }
@@ -122,6 +128,7 @@ public final class Join1211 implements GameJoin {
         if (half != null) {
             discard(server.getPlayerList(), half);
         }
+        HeldPackets.drop(connection);
     }
 
     /** Removes a half-placed player as the game does when a player leaves, without saving it. */
@@ -162,21 +169,29 @@ public final class Join1211 implements GameJoin {
     }
 
     @Override
-    public void dropAtFeet(java.util.List<fr.palawi.playerdatarescue.core.nbt.NbtCompound> stacks) {
+    public List<NbtCompound> dropAtFeet(List<NbtCompound> stacks) {
         ServerPlayer player = server.getPlayerList().getPlayer(id());
         if (player == null) {
-            return;
+            return stacks;
         }
-        for (fr.palawi.playerdatarescue.core.nbt.NbtCompound stack : stacks) {
-            ItemStack item = ItemStack.parse(player.registryAccess(), GameNbt.toGame(stack))
-                    .orElse(ItemStack.EMPTY);
+        List<NbtCompound> unread = new ArrayList<>();
+        for (NbtCompound stack : stacks) {
+            ItemStack item;
+            try {
+                item = ItemStack.parse(player.registryAccess(), GameNbt.toGame(stack))
+                        .orElse(ItemStack.EMPTY);
+            } catch (RuntimeException e) {
+                item = ItemStack.EMPTY;
+            }
             if (item.isEmpty()) {
+                unread.add(stack);
                 continue;
             }
             ItemEntity entity = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), item);
             entity.setNoPickUpDelay();
             player.level().addFreshEntity(entity);
         }
+        return unread;
     }
 
     @Override

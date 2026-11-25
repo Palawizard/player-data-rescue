@@ -1,5 +1,6 @@
 package fr.palawi.playerdatarescue.mc;
 
+import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -10,14 +11,13 @@ import fr.palawi.playerdatarescue.core.incident.EntryStatus;
 import fr.palawi.playerdatarescue.core.incident.IncidentFiles;
 import fr.palawi.playerdatarescue.core.incident.IncidentStore;
 import fr.palawi.playerdatarescue.core.recurring.RecurringIssues;
+import fr.palawi.playerdatarescue.core.restore.RestorePending;
 import fr.palawi.playerdatarescue.core.restore.RestoreQueue;
 import fr.palawi.playerdatarescue.core.restore.Restorer;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.ChatFormatting;
@@ -56,19 +56,17 @@ public final class PdrCommands {
                                 .executes(c -> list(c, StringArgumentType.getString(c, "player")))))
                 .then(Commands.literal("show").then(incidentArguments(PdrCommands::show)))
                 .then(Commands.literal("restore")
-                        .then(incidentArguments(c -> restore(c, "all"))
-                                .then(Commands.argument("entry", StringArgumentType.greedyString())
-                                        .suggests(ENTRIES)
-                                        .executes(c -> restore(c, StringArgumentType.getString(c, "entry"))))))
+                        .then(incidentArguments(
+                                c -> restore(c, "all"),
+                                entryArgument(c -> restore(c, StringArgumentType.getString(c, "entry"))))))
                 .then(Commands.literal("dismiss")
                         .then(Commands.literal("recurring")
                                 .then(Commands.argument("key", StringArgumentType.greedyString())
                                         .suggests(RECURRING_KEYS)
                                         .executes(c -> guarded(c, PdrCommands::dismissRecurring))))
-                        .then(incidentArguments(c -> dismiss(c, "all"))
-                                .then(Commands.argument("entry", StringArgumentType.greedyString())
-                                        .suggests(ENTRIES)
-                                        .executes(c -> dismiss(c, StringArgumentType.getString(c, "entry"))))))
+                        .then(incidentArguments(
+                                c -> dismiss(c, "all"),
+                                entryArgument(c -> dismiss(c, StringArgumentType.getString(c, "entry"))))))
                 .then(Commands.literal("export").then(incidentArguments(PdrCommands::export))));
     }
 
@@ -78,11 +76,27 @@ public final class PdrCommands {
 
     /** {@code <player> <incident>}, running {@code action} when nothing follows. */
     private static ArgumentBuilder<CommandSourceStack, ?> incidentArguments(Action action) {
+        return incidentArguments(action, null);
+    }
+
+    /** {@code <player> <incident> [next]}: {@code next} follows the incident. */
+    private static ArgumentBuilder<CommandSourceStack, ?> incidentArguments(
+            Action action, ArgumentBuilder<CommandSourceStack, ?> next) {
+        ArgumentBuilder<CommandSourceStack, ?> incident = Commands.argument("incident", StringArgumentType.word())
+                .suggests(INCIDENTS)
+                .executes(c -> guarded(c, action));
+        if (next != null) {
+            incident.then(next);
+        }
         return Commands.argument("player", StringArgumentType.word())
                 .suggests(PLAYERS)
-                .then(Commands.argument("incident", StringArgumentType.word())
-                        .suggests(INCIDENTS)
-                        .executes(c -> guarded(c, action)));
+                .then(incident);
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> entryArgument(Command<CommandSourceStack> command) {
+        return Commands.argument("entry", StringArgumentType.greedyString())
+                .suggests(ENTRIES)
+                .executes(command);
     }
 
     private static final SuggestionProvider<CommandSourceStack> PLAYERS = (context, builder) -> {
@@ -237,19 +251,25 @@ public final class PdrCommands {
                 context,
                 Component.literal("Incident " + s.folder() + " of " + s.playerName() + ", " + s.time() + ", trigger "
                         + s.trigger() + ", " + s.outcome().replace('_', ' ') + "."));
-        List<RestoreQueue.Item> queue =
-                RestoreQueue.read(root(context.getSource().getServer()), player.id());
+        Path root = root(context.getSource().getServer());
+        List<RestoreQueue.Item> queue = RestoreQueue.read(root, player.id());
+        Optional<RestorePending> pending = RestorePending.read(root, player.id());
         for (IncidentFiles.Entry e : s.entries()) {
-            boolean waiting = queue.contains(new RestoreQueue.Item(incident, e.id()));
-            String status =
-                    waiting ? "to restore at the next join" : e.status().json().replace('_', ' ');
+            RestoreQueue.Item item = new RestoreQueue.Item(incident, e.id());
+            boolean inFlight = pending.isPresent() && pending.get().holds(item);
+            boolean waiting = queue.contains(item) || inFlight;
+            String status = inFlight
+                    ? "going back into the data at the current join"
+                    : waiting
+                            ? "to restore at the next join"
+                            : e.status().json().replace('_', ' ');
             MutableComponent line = Component.literal("- " + e.id() + ": " + e.description() + " (" + status
                     + e.statusReason().map(r -> ": " + r).orElse("") + ") ");
-            if (e.status() != EntryStatus.RESTORED && !waiting && e.payload().isPresent()) {
+            if (e.status().restorable() && !waiting && e.payload().isPresent()) {
                 line.append(Texts.action(
                         "restore", "/" + ROOT + " restore " + player.id() + " " + incident + " " + e.id()));
             }
-            if (e.status() == EntryStatus.QUARANTINED || e.status() == EntryStatus.RESTORE_FAILED) {
+            if (e.status().dismissable() && !inFlight) {
                 line.append(" ")
                         .append(Texts.action(
                                 "dismiss", "/" + ROOT + " dismiss " + player.id() + " " + incident + " " + e.id()));
@@ -282,6 +302,13 @@ public final class PdrCommands {
                         incident,
                         player.name(),
                         queued.queued());
+                if (!RescueService.active()) {
+                    say(
+                            c,
+                            Component.literal("The mod is turned off in its config: the entries go back at the first"
+                                            + " join after it is turned on again.")
+                                    .withStyle(ChatFormatting.YELLOW));
+                }
                 player.online()
                         .ifPresent(online -> online.sendSystemMessage(Component.translatableWithFallback(
                                         "playerdatarescue.player.restore_queued",
@@ -309,32 +336,17 @@ public final class PdrCommands {
         return guarded(context, c -> {
             Player player = require(c, StringArgumentType.getString(c, "player"));
             String incident = StringArgumentType.getString(c, "incident");
-            Path folder = incidentFolder(c, player, incident);
-            IncidentFiles.Summary s = IncidentFiles.read(folder);
-            boolean all = entry.equals("all");
-            if (!all && s.entries().stream().noneMatch(e -> e.id().equals(entry))) {
-                throw new IllegalArgumentException("Incident " + incident + " has no entry " + entry + ".");
-            }
-            Map<String, EntryStatus> statuses = new LinkedHashMap<>();
-            List<RestoreQueue.Item> unqueue = new ArrayList<>();
-            for (IncidentFiles.Entry e : s.entries()) {
-                boolean chosen = all || e.id().equals(entry);
-                if (chosen && (e.status() == EntryStatus.QUARANTINED || e.status() == EntryStatus.RESTORE_FAILED)) {
-                    statuses.put(e.id(), EntryStatus.DISMISSED);
-                    unqueue.add(new RestoreQueue.Item(incident, e.id()));
-                }
-            }
-            IncidentFiles.setStatus(folder, statuses, Map.of());
-            RestoreQueue.remove(root(c.getSource().getServer()), player.id(), unqueue);
+            incidentFolder(c, player, incident);
+            List<String> dismissed = Restorer.dismiss(root(c.getSource().getServer()), player.id(), incident, entry);
             say(
                     c,
                     Component.literal(
-                            statuses.isEmpty()
+                            dismissed.isEmpty()
                                     ? "Nothing to dismiss in " + incident + "."
-                                    : "Dismissed " + count(statuses.size(), "entry") + " of " + player.name() + ": "
-                                            + String.join(", ", statuses.keySet())
+                                    : "Dismissed " + count(dismissed.size(), "entry") + " of " + player.name() + ": "
+                                            + String.join(", ", dismissed)
                                             + ". The data stays in the incident folder."));
-            return statuses.size();
+            return dismissed.size();
         });
     }
 
@@ -388,15 +400,11 @@ public final class PdrCommands {
     }
 
     private static Path incidentFolder(CommandContext<CommandSourceStack> context, Player player, String incident) {
-        Path folder = root(context.getSource().getServer())
-                .resolve(player.id().toString())
-                .resolve(incident)
-                .normalize();
-        if (!incident.matches("[0-9]{8}-[0-9]{6}(-[0-9]+)?")
-                || !folder.resolve("report.json").toFile().isFile()) {
-            throw new IllegalArgumentException(player.name() + " has no incident " + incident + ".");
+        try {
+            return Restorer.incidentFolder(root(context.getSource().getServer()), player.id(), incident);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(player.name() + " has no incident " + incident + ".", e);
         }
-        return folder;
     }
 
     private static String statusCounts(IncidentFiles.Summary s) {

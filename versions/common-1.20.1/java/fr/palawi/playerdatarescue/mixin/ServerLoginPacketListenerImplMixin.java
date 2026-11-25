@@ -1,9 +1,11 @@
 package fr.palawi.playerdatarescue.mixin;
 
 import com.mojang.authlib.GameProfile;
+import fr.palawi.playerdatarescue.mc.HeldPackets;
 import fr.palawi.playerdatarescue.mc.Join1201;
 import fr.palawi.playerdatarescue.mc.RescueService;
 import fr.palawi.playerdatarescue.mc.RestoreService;
+import fr.palawi.playerdatarescue.mc.Timing;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -37,6 +39,33 @@ abstract class ServerLoginPacketListenerImplMixin {
 
     @Inject(
             method = "handleAcceptedLogin",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;placeNewPlayer(Lnet/minecraft/server/level/ServerPlayer;)V"))
+    private void playerdatarescue$holdPackets(CallbackInfo ci) {
+        long start = Timing.start();
+        HeldPackets.hold(connection);
+        Timing.stop(gameProfile.getId(), start);
+    }
+
+    @Inject(
+            method = "handleAcceptedLogin",
+            at =
+                    @At(
+                            value = "INVOKE",
+                            target =
+                                    "Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;placeNewPlayer(Lnet/minecraft/server/level/ServerPlayer;)V",
+                            shift = At.Shift.AFTER))
+    private void playerdatarescue$releasePackets(CallbackInfo ci) {
+        long start = Timing.start();
+        HeldPackets.release(connection);
+        Timing.stop(gameProfile.getId(), start);
+    }
+
+    @Inject(
+            method = "handleAcceptedLogin",
             at = @At(value = "INVOKE", target = "Lorg/slf4j/Logger;error(Ljava/lang/String;Ljava/lang/Throwable;)V"),
             cancellable = true,
             locals = LocalCapture.CAPTURE_FAILHARD)
@@ -46,21 +75,29 @@ abstract class ServerLoginPacketListenerImplMixin {
         }
     }
 
-    /** Before the game builds and loads the player: a queued restore goes into the data first. */
-    @Inject(
-            method = "handleAcceptedLogin",
-            at =
-                    @At(
-                            value = "INVOKE",
-                            target =
-                                    "Lnet/minecraft/server/players/PlayerList;getPlayerForLogin(Lcom/mojang/authlib/GameProfile;)Lnet/minecraft/server/level/ServerPlayer;"))
-    private void playerdatarescue$beforeRead(CallbackInfo ci) {
+    /**
+     * Before the game loads the player, a queued restore goes into the data. Not before {@code
+     * getPlayerForLogin}: when the same player is still online, that call disconnects them and
+     * saves their data, which would replace the restored data. Here the old player is gone, both
+     * when the placement runs at once and when it was delayed until then.
+     */
+    @Inject(method = "placeNewPlayer", at = @At("HEAD"))
+    private void playerdatarescue$beforeRead(ServerPlayer player, CallbackInfo ci) {
         Join1201 join = new Join1201(server, connection, gameProfile);
         RestoreService.beforeRead(join.id(), join.name(), join.worldDirectory(), join.minecraftVersion(), join::source);
     }
 
+    /** The game placed the player; also the end of a placement that was delayed. */
+    @Inject(method = "placeNewPlayer", at = @At("RETURN"))
+    private void playerdatarescue$placed(ServerPlayer player, CallbackInfo ci) {
+        RestoreService.joined(new Join1201(server, connection, gameProfile));
+    }
+
     @Inject(method = "handleAcceptedLogin", at = @At("RETURN"))
     private void playerdatarescue$joined(CallbackInfo ci) {
+        long start = Timing.start();
+        HeldPackets.release(connection);
+        Timing.stop(gameProfile.getId(), start);
         RescueService.onLoginFinished(new Join1201(server, connection, gameProfile));
     }
 }

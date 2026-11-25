@@ -9,6 +9,8 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,11 +18,19 @@ import org.slf4j.LoggerFactory;
 public final class PdrTestForge {
     private static final Logger LOGGER = LoggerFactory.getLogger("pdrtest");
 
-    public PdrTestForge() {
+    public PdrTestForge(FMLJavaModLoadingContext context) {
         MinecraftForge.EVENT_BUS.addGenericListener(Entity.class, PdrTestForge::attach);
         MinecraftForge.EVENT_BUS.addListener(PdrTestForge::onSave);
         MinecraftForge.EVENT_BUS.addListener(PdrTestForge::onLogin);
+        context.getModEventBus().addListener(PdrTestForge::onClientSetup);
         LOGGER.info("{}loaded on forge 1.21.1", TestModes.LOG_PREFIX);
+    }
+
+    // Forge 52 starts the game event bus after the client has opened a quick play world, so that
+    // world's AddReloadListenerEvent is dropped and its first loot roll crashes the integrated
+    // server (docs/TESTING.md, S8). Forge 47 starts it before it opens that world.
+    private static void onClientSetup(FMLClientSetupEvent event) {
+        MinecraftForge.EVENT_BUS.start();
     }
 
     private static void attach(AttachCapabilitiesEvent<Entity> event) {
@@ -36,8 +46,6 @@ public final class PdrTestForge {
 
     private static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         String name = event.getEntity().getGameProfile().getName();
-        if (TestModes.has(name, TestModes.THROW_ON_PLACEMENT)) {
-            throw TestModes.failure("placement of " + name);
-        }
+        TestModes.checkPlacement(name, event.getEntity());
     }
 }

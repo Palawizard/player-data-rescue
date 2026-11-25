@@ -93,16 +93,21 @@ public final class RescueService {
      * was rescued and is now in the world; false to let the game disconnect them as it would.
      */
     public static boolean onPlacementFailure(GameJoin join, Exception failure) {
+        boolean rescued = false;
         try {
-            return placementFailure(join, failure);
+            rescued = rescueAfterPlacementFailure(join, failure);
+            return rescued;
         } finally {
-            // Restored entries of a join that failed without a rescue result failed too; when
-            // the rescue ran, it has already decided each one.
-            RestoreService.rescued(join, null, null);
+            // The timed hooks of a failed join (the hold, and on 1.20.1 the read of each attempt)
+            // never reach the normal path report, so their time must not end up in the next join's.
+            Timing.take(join.id());
+            // Entries a queued restore put into this join's data are decided once the rescue,
+            // if any, has put the player in the world or given up.
+            RestoreService.afterPlacementFailure(join, rescued);
         }
     }
 
-    private static boolean placementFailure(GameJoin join, Exception failure) {
+    private static boolean rescueAfterPlacementFailure(GameJoin join, Exception failure) {
         if (bridge == null || !config.enabled()) {
             return false;
         }

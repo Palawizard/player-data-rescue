@@ -36,8 +36,6 @@ public final class PdrTestForge {
 
     private static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         String name = event.getEntity().getGameProfile().getName();
-        if (TestModes.has(name, TestModes.THROW_ON_PLACEMENT)) {
-            throw TestModes.failure("placement of " + name);
-        }
+        TestModes.checkPlacement(name, event.getEntity());
     }
 }
