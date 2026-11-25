@@ -141,8 +141,10 @@ function Test-RecurringRecord {
                 }
             }
         }
-        $left = @(Get-ChildItem -LiteralPath (Join-Path $serverDir 'smokeworld/playerdatarescue/recurring') -Filter '*.nbt' -File)
-        if ($left.Count -gt 0) { $problems += "S14: payload files left in recurring/: $(@($left | ForEach-Object { $_.Name }) -join ', ')." }
+        $folder = Join-Path $serverDir 'smokeworld/playerdatarescue/recurring'
+        $left = @()
+        if (Test-Path -LiteralPath $folder) { $left = @(Get-ChildItem -LiteralPath $folder -File) }
+        if ($left.Count -gt 0) { $problems += "S14: files left in recurring/: $(@($left | ForEach-Object { $_.Name }) -join ', ')." }
         if ($JoinLog -notmatch ([regex]::Escape($key) + " loaded again for $($Scenario.Player)")) {
             $problems += "S14: the log does not say that $key loaded again for $($Scenario.Player)."
         }
