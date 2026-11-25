@@ -7,9 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import fr.palawi.playerdatarescue.core.incident.EntryStatus;
+import fr.palawi.playerdatarescue.core.incident.IncidentFiles;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -99,6 +101,34 @@ class RestorerTest {
 
         assertTrue(Restorer.dismiss(bench.root, PLAYER, incident, "inv.17").isEmpty());
         assertEquals(EntryStatus.RESTORED, bench.status(incident));
+    }
+
+    @Test
+    void namingADismissedEntrySetsItAsideAgain() throws Exception {
+        Restorer.dismiss(bench.root, PLAYER, incident, "inv.17");
+
+        Restorer.queue(bench.root, PLAYER, incident, "inv.17");
+
+        assertEquals(EntryStatus.QUARANTINED, bench.status(incident));
+    }
+
+    @Test
+    void theCommandRefusesAVehicle(@TempDir Path other) throws Exception {
+        RestoreBench vehicle = new RestoreBench(other, "1.21.1-forge/S4Bot.dat");
+        String rescued = vehicle.rescue("vehicle");
+
+        Restorer.Queued queued = Restorer.queue(vehicle.root, PLAYER, rescued, "all");
+
+        assertTrue(queued.queued().isEmpty());
+        assertTrue(queued.notRestorable().get("vehicle").contains("vehicles cannot be restored"));
+        assertFalse(Files.exists(RestoreQueue.file(vehicle.root, PLAYER)));
+    }
+
+    @Test
+    void anOfflinePlayerIsFoundByUuidOrByTheNameOfTheLatestIncident() throws Exception {
+        assertEquals(Optional.of(PLAYER), IncidentFiles.findPlayer(bench.root, PLAYER.toString()));
+        assertEquals(Optional.of(PLAYER), IncidentFiles.findPlayer(bench.root, "s1bot"));
+        assertEquals(Optional.empty(), IncidentFiles.findPlayer(bench.root, "Nobody"));
     }
 
     @Test

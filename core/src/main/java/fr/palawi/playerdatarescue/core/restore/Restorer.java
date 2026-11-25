@@ -58,6 +58,14 @@ public final class Restorer {
         }
         // An entry queued by an earlier command stays queued once.
         RestoreQueue.add(root, player, items);
+        // A dismissed entry named again is set aside once more, so retention keeps its incident.
+        Map<String, EntryStatus> undismissed = new LinkedHashMap<>();
+        for (IncidentFiles.Entry e : chosen) {
+            if (e.status() == EntryStatus.DISMISSED && items.contains(new RestoreQueue.Item(incident, e.id()))) {
+                undismissed.put(e.id(), EntryStatus.QUARANTINED);
+            }
+        }
+        IncidentFiles.setStatus(incidentFolder(root, player, incident), undismissed, Map.of());
         return new Queued(items.stream().map(RestoreQueue.Item::entry).toList(), already, notRestorable);
     }
 

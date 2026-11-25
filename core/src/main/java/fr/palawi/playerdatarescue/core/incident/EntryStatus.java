@@ -27,4 +27,9 @@ public enum EntryStatus {
     public boolean dismissable() {
         return this == QUARANTINED || this == RESTORE_FAILED;
     }
+
+    /** An entry that can still be restored keeps its incident from being pruned. */
+    public boolean keepsIncident() {
+        return this == QUARANTINED || this == RESTORE_FAILED;
+    }
 }

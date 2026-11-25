@@ -16,6 +16,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -140,8 +141,7 @@ public final class IncidentStore {
             JsonElement json = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8));
             for (JsonElement entry : json.getAsJsonObject().getAsJsonArray("entries")) {
                 String status = entry.getAsJsonObject().get("status").getAsString();
-                if (EntryStatus.QUARANTINED.json().equals(status)
-                        || EntryStatus.RESTORE_FAILED.json().equals(status)) {
+                if (EntryStatus.valueOf(status.toUpperCase(Locale.ROOT)).keepsIncident()) {
                     return true;
                 }
             }

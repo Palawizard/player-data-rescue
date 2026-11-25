@@ -265,6 +265,13 @@ public final class PdrCommands {
                         incident,
                         player.name(),
                         queued.queued());
+                if (!RescueService.active()) {
+                    say(
+                            c,
+                            Component.literal("The mod is turned off in its config: the entries go back at the first"
+                                            + " join after it is turned on again.")
+                                    .withStyle(ChatFormatting.YELLOW));
+                }
                 player.online()
                         .ifPresent(online -> online.sendSystemMessage(Component.translatableWithFallback(
                                         "playerdatarescue.player.restore_queued",
@@ -341,15 +348,11 @@ public final class PdrCommands {
     }
 
     private static Path incidentFolder(CommandContext<CommandSourceStack> context, Player player, String incident) {
-        Path folder = root(context.getSource().getServer())
-                .resolve(player.id().toString())
-                .resolve(incident)
-                .normalize();
-        if (!incident.matches("[0-9]{8}-[0-9]{6}(-[0-9]+)?")
-                || !folder.resolve("report.json").toFile().isFile()) {
-            throw new IllegalArgumentException(player.name() + " has no incident " + incident + ".");
+        try {
+            return Restorer.incidentFolder(root(context.getSource().getServer()), player.id(), incident);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(player.name() + " has no incident " + incident + ".", e);
         }
-        return folder;
     }
 
     private static String statusCounts(IncidentFiles.Summary s) {
