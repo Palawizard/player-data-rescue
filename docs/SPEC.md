@@ -84,6 +84,7 @@ A mod that saves data it cannot read back breaks every login, and each join then
 - Later failures of that key are counted in the record; each of them still has its incident.
 - Operators are told once per server start: "Mod X saves player data it cannot load back. That data is set aside at every login until X is fixed. Report it to X with the file below." When no mod stands out, the message asks them to report it to the mod that owns the data. The usual incident message of §7 is sent at every join as well.
 - The record is closed by `/pdrescue dismiss recurring <key>`, or automatically when the key loads successfully again: a player of the record joins without a failure and their saved data holds the key. A closed record moves to `recurring/closed/` with its payloads; nothing is deleted. After a dismiss, a new record of the same key tells operators again.
+- A record file that cannot be read is left as it is: it is not counted, closed or replaced, and `/pdrescue list` and the server log name it. A `streaks.json` that cannot be read counts as no streak and is replaced at the next failure.
 
 ## 5. Suspected mod attribution
 
