@@ -151,19 +151,6 @@ public final class IncidentStore {
         }
     }
 
-    /**
-     * Removes the folder of an incident this join made, when nothing in it is needed any more: a
-     * recurring issue keeps the payload in its own record (SPEC.md section 4.4).
-     */
-    public void discard(Path incident) throws IOException {
-        if (!incident.toAbsolutePath()
-                .normalize()
-                .startsWith(root.toAbsolutePath().normalize())) {
-            throw new IOException(incident + " is not an incident folder");
-        }
-        deleteTree(incident);
-    }
-
     private static void deleteTree(Path folder) throws IOException {
         List<Path> paths;
         try (Stream<Path> walk = Files.walk(folder)) {

@@ -76,13 +76,14 @@ The vanilla core only: position (world spawn if invalid), health 20, food 20 and
 
 ### 4.4 Recurring failures
 
-A mod that saves data it cannot read back breaks every login. Each join would then create a new incident for the same key. To keep this readable:
+A mod that saves data it cannot read back breaks every login, and each join then sets the same key aside again. To keep this readable, the joins of one key are grouped in a record. The record only groups: every join keeps its own incident as usual (backup in `original/`, report, restorable entries, retention of §6), so nothing is lost.
 
-- A unit key that is quarantined for the same player on `recurringThreshold` consecutive joins (default 3), or for `recurringThreshold` different players, becomes a *recurring issue*. A join of that player where the key does not fail ends the streak. Streaks are kept in `<world>/playerdatarescue/<uuid>/streaks.json`, so a restart does not reset them. Only the units of a rescue that ends with the salvaged data count; a minimal profile sets whole sections aside, not one key.
-- A recurring issue has one record under `<world>/playerdatarescue/recurring/<key>.json`, holding the key, the suspected mod, the affected players, the first and last occurrence, a counter (the failed joins of the streak that made it, then one per join), and the first and the latest payload, as SNBT in the record and as binary NBT next to it (`<key>.first.nbt`, `<key>.latest.nbt`).
-- Later failures for that key update the record instead of creating new incidents. Other failing units of the same join still create an incident as usual. A join whose only failing units are recurring keys keeps no incident: the record holds their payload, and the rest of the data is saved as usual.
-- Operators are told once per server start: "Mod X saves player data it cannot load back. That data is set aside at every login until X is fixed. Report it to X with the file below."
-- The record is closed by `/pdrescue dismiss recurring <key>`, or automatically when the key loads successfully again: a player of the record joins without a failure and their saved data holds the key. A closed record moves to `recurring/closed/` with its payloads; nothing is deleted.
+- Only mod data counts: an attachment or capability (`attachment.<key>`) or an unknown top-level key (`key.<key>`), which a mod writes again at every save. A slot, an effect or the vehicle is gone from the data once set aside. Only the units of a rescue that ends with the salvaged data count; a minimal profile sets whole sections aside, not one key.
+- A key set aside for the same player on `recurringThreshold` consecutive joins (default 3, at least 2), or for `recurringThreshold` different players that each have a streak on it, becomes a *recurring issue*. A join of that player where the key does not fail ends the streak. Streaks are kept in `<world>/playerdatarescue/<uuid>/streaks.json` with the player's name, so a restart does not reset them.
+- A recurring issue has one record under `<world>/playerdatarescue/recurring/`, holding the key, the suspected mod, the players concerned, the first and last occurrence, a counter (the failed joins of the streaks that made it, then one per join), and the first and the latest payload, as SNBT in the record and as binary NBT next to it. File names are the key with unsafe characters replaced and a hash of the exact key, so two keys never share a file.
+- Later failures of that key are counted in the record; each of them still has its incident.
+- Operators are told once per server start: "Mod X saves player data it cannot load back. That data is set aside at every login until X is fixed. Report it to X with the file below." When no mod stands out, the message asks them to report it to the mod that owns the data. The usual incident message of §7 is sent at every join as well.
+- The record is closed by `/pdrescue dismiss recurring <key>`, or automatically when the key loads successfully again: a player of the record joins without a failure and their saved data holds the key. A closed record moves to `recurring/closed/` with its payloads; nothing is deleted. After a dismiss, a new record of the same key tells operators again.
 
 ## 5. Suspected mod attribution
 
@@ -108,8 +109,12 @@ At most three suspects, without duplicates. Reports say "most likely", never "ca
       report.json
     restore-queue.json          entries queued by /pdrescue restore (§7.1)
     restore-pending.dat         entries on their way into the data at a join (§7.1)
+    streaks.json                consecutive failures of each mod data key (§4.4)
   recurring/
-    <key>.json                  recurring issues (§4.4)
+    <key>-<hash>.json           one recurring issue (§4.4)
+    <key>-<hash>.first.nbt      first payload of that key
+    <key>-<hash>.latest.nbt     latest payload of that key
+    closed/                     closed records, with their payloads
 ```
 
 - The folder lives inside the world, so world backups include it.
@@ -166,7 +171,7 @@ Decided on 2026-11-24 (ADR-PDR-013): a restore always goes through the game's ow
 | `maxIncidentsPerPlayer` | `20` | Retention for fully handled incidents. |
 | `useDatOldFallback` | `true` | Try the `_old` file when the main file cannot be parsed. On 1.21.1 and 26.3 the game itself reads `.dat_old` whatever this setting says (checked in their sources), and the report says so; on 1.20.1 the mod does it. |
 | `rescuePlacementFailures` | `true` | Handle T3. When `false`, the player is still disconnected as without the mod, but a half-placed player is removed without being saved, so the data on disk stays the original. |
-| `recurringThreshold` | `3` | Joins or players before a failure becomes a recurring issue. |
+| `recurringThreshold` | `3` | Joins or players before a failure becomes a recurring issue (§4.4). At least 2. |
 | `logFullStackTraces` | `false` | Put full traces in the log. They are always in `report.txt`. |
 
 ## 9. Acceptance scenarios
@@ -189,7 +194,7 @@ S1, S3, S4 and S7, and S2, S13 and S14 on NeoForge, depend on T4. They are check
 | S10 | The mod is removed after incidents were recorded. | The world loads. | The world loads normally, and the `playerdatarescue/` folder is ignored. |
 | S11 | The test mod throws on every placement, whatever the data. | P joins twice. | Both joins end with the vanilla disconnect. One incident and one diagnosis report are written, saying the data is not the cause and naming the test mod. The second join does not retry a rescue. Nothing loops or crashes. |
 | S12 | Valid player data. | P joins. | No incident and no file written. The extra work on the normal path is under 1 ms. |
-| S13 | The test mod saves an attachment it cannot read back. | P joins and leaves four times. | The first joins create incidents. From the third consecutive failure the key becomes a recurring issue: one record, operators told once, and no new incident for that key. |
+| S13 | The test mod saves an attachment it cannot read back. | P joins and leaves four times. | Every join creates an incident. From the third consecutive failure the key becomes a recurring issue: one record that counts the third and fourth joins, and operators get the recurring notice once. |
 | S14 | S13, then the test mod is switched to a fixed behaviour. | P joins. | The attachment loads, and the recurring record is closed automatically. |
 | S15 | The test mod's placement fails only when P's saved data holds its attachment (a data-related T3). | P joins with the vanilla client. | P joins with the minimal profile on the same connection, the client stays connected and moves its player. One incident: T3, minimal profile, the attachment set aside with the other sections, the test mod as suspect. |
 | S16 | S15, then the test mod's placement accepts the attachment again. | An operator runs `restore` for the whole inventory twice, and P joins after each. | The stacks come back once, in their slots, and the second restore says the entry is already restored. The data before the restore is backed up in a new incident. |

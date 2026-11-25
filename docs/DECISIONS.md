@@ -252,3 +252,16 @@ Amended on 2026-11-25 (the set-aside case decided by the maintainer):
 - On 26.3 the hook moves from the head of `PrepareSpawnTask#start` to before `PrepareSpawnTask#spawnPlayer` in `handleConfigurationFinished`, whose `Ready#spawn` reads the player file again. `start` can run on a network thread, and before the duplicate login check: a second connection of a player still online could apply the restore, be refused, and leave the online player to save over the merged data.
 - Each entry is followed by its incident and entry id, and the rescue's verdict is read from the tags the entry put into the data, not from the entry id: a stack restored to another slot, or two incidents with the same entry id, are decided apart.
 - When the data is put back, or was never written, the values the backup incident kept as replaced are in the player's data, so they are marked `restored` there instead of staying restorable from the backup. Two queued entries on the same key do not go back at the same join.
+
+## ADR-PDR-014: A recurring issue groups incidents and never replaces them
+
+Status: Accepted.
+
+Every join whose rescue sets a key aside keeps its own incident, even when that key already has a recurring issue (SPEC.md section 4.4). The record groups those joins: a counter, the players concerned, the first and the latest payload, and an operator notice once per server start. Only mod data counts (attachments and capabilities, unknown top-level keys). Decided by the maintainer on 2026-11-25, after the review of the first implementation.
+
+Options considered:
+
+- No new incident for a recurring key, as the first SPEC said: a join whose only failing units were recurring keys deleted its incident, backup included, and the record kept only the first and the latest payload, the latest overwritten at each join. The review found that this lost data: the ids also covered inventory slots, so with three players a fourth player's item in the same slot was gone; core values reset by the rescue were not reported; a restored entry set aside again pointed to a deleted incident.
+- No new incident only for mod keys, back to a normal incident when core values changed or the record write failed, with each player's first payload kept in the record. It saves disk space, but adds cases where data lives only in the record, each needing its own checks.
+
+Why: the incident is the place that holds a backup, a report and restorable entries, and the rule of this mod is to never delete player data without a verified backup. Keeping it at every join means a record can be wrong, missing or closed without any loss. Retention (SPEC.md section 6) keeps incidents that still have a restorable entry, so a mod that keeps failing makes one small incident per join until an operator dismisses its entries.
