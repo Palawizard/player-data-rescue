@@ -81,8 +81,10 @@ function Get-Incidents {
 
 function Invoke-WorldRun {
     # Opens $WorldName, waits until the log shows $Until and the host stayed a few seconds, then
-    # closes the window. Returns the client log, its chat and the problems it shows.
-    param([string]$Step, [string]$WorldName, [string]$Until, [int]$StaySeconds = 10)
+    # closes the window. Records the client's problems as failures of $Step, except the expected
+    # disconnect of a failing join ($JoinFails), and any crash report, also one written while the
+    # game closed. Returns the client log and its chat.
+    param([string]$Step, [string]$WorldName, [string]$Until, [int]$StaySeconds = 10, [switch]$JoinFails)
     $client = Start-RealClient -Launcher $portableMc -Root $root -Version $version -JavaExe $javaExe -Name $player `
         -GameDir $gameDir -World $WorldName
     try {
@@ -94,10 +96,16 @@ function Invoke-WorldRun {
     }
     $log = Get-RealClientLog -Client $client
     $chat = @(Get-RealClientChat -Client $client)
-    $script:summary += "${Step}: reached '$Until': $reached; chat [$($chat -join ' | ')]; closed cleanly: $closed"
-    if (-not $reached) { $script:failures += "${Step}: the client log never showed '$Until'." }
+    $shown = [regex]::Unescape($Until)
+    $script:summary += "${Step}: reached '$shown': $reached; chat [$($chat -join ' | ')]; closed cleanly: $closed"
+    if (-not $reached) { $script:failures += "${Step}: the client log never showed '$shown'." }
     if (-not $closed) { $script:failures += "${Step}: the game did not close by itself, so the world may not be saved." }
-    return @{ Log = $log; Chat = $chat; Health = $health }
+    if (-not $JoinFails) {
+        foreach ($problem in @($health | Where-Object { $_ -notmatch ': crash report ' })) { $script:failures += "${Step}: $problem" }
+    }
+    $crashes = @(Get-ChildItem -LiteralPath (Join-Path $gameDir 'crash-reports') -File -ErrorAction SilentlyContinue)
+    foreach ($crash in $crashes) { $script:failures += "${Step}: crash report $($crash.Name)" }
+    return @{ Log = $log; Chat = $chat }
 }
 
 if (-not $KeepWorld) {
@@ -120,16 +128,17 @@ $first = Invoke-WorldRun -Step 'first opening' -WorldName 'S8' -Until "$player j
 if ($first.Log -notmatch "saved attachment pdrtest:broken of $player as int") {
     $failures += "first opening: the test mod did not save its attachment for $player."
 }
-$failures += $first.Health
+if (@(Get-Incidents).Count -ne 0) { $failures += "first opening: $(@(Get-Incidents).Count) incident(s), expected none." }
 Copy-Item -LiteralPath $world -Destination (Join-Path $gameDir 'saves/S8control') -Recurse
 
 # 3. Control without the release JAR.
 Set-Mods -WithoutMod
 Set-Modes 'attach,attachment-throws'
 if ($expectRescue) {
-    Invoke-WorldRun -Step 'control without the mod' -WorldName 'S8control' -Until "Couldn't place player in world" -StaySeconds 3 | Out-Null
+    Invoke-WorldRun -Step 'control without the mod' -WorldName 'S8control' -Until "Couldn't place player in world" -StaySeconds 3 -JoinFails | Out-Null
 } else {
-    Invoke-WorldRun -Step 'control without the mod' -WorldName 'S8control' -Until 'Failed to deserialize data attachment' | Out-Null
+    $control = Invoke-WorldRun -Step 'control without the mod' -WorldName 'S8control' -Until "$player joined the game"
+    if ($control.Log -notmatch 'Failed to deserialize data attachment') { $failures += 'control without the mod: the log does not show the skipped attachment.' }
 }
 Remove-Item -LiteralPath (Join-Path $gameDir 'saves/S8control') -Recurse -Force
 
@@ -142,7 +151,6 @@ if ($expectRescue) {
     $rescue = Invoke-WorldRun -Step 'rescue (T4 on NeoForge)' -WorldName 'S8' -Until "$player joined the game"
     if ($rescue.Log -notmatch 'Failed to deserialize data attachment') { $failures += 'NeoForge: the log does not show the skipped attachment.' }
 }
-$failures += $rescue.Health
 $incidents = @(Get-Incidents | Where-Object { $before.FullName -notcontains $_.FullName })
 if (-not $expectRescue) {
     if ($incidents.Count -ne 0) { $failures += "rescue: $($incidents.Count) incident(s) on NeoForge, none expected (T4)." }
@@ -157,11 +165,15 @@ if (-not $expectRescue) {
     $summary += "incident $($incidents[0].Parent.Name)/$($incidents[0].Name): trigger $($report.trigger), outcome $($report.outcome), set aside [$($entries -join ', ')], original/ [$($originals -join ', ')], suspects [$(@($report.suspects | ForEach-Object { $_.modId }) -join ', ')]"
     if ($report.trigger -ne 'T1' -or $report.outcome -ne 'rescued') { $failures += "rescue: trigger $($report.trigger), outcome $($report.outcome), expected T1 and rescued." }
     if ($entries.Count -ne 1 -or $entries[0] -ne $entryId) { $failures += "rescue: set aside [$($entries -join ', ')], expected only $entryId." }
-    elseif (-not (Test-Path -LiteralPath (Join-Path $folder $report.entries[0].payload))) { $failures += 'rescue: no payload file for the attachment.' }
+    elseif (-not $report.entries[0].payload -or -not (Test-Path -LiteralPath (Join-Path $folder $report.entries[0].payload))) { $failures += 'rescue: no payload file for the attachment.' }
     if (@($report.suspects | ForEach-Object { $_.modId }) -notcontains 'pdrtest') { $failures += 'rescue: pdrtest is not a suspect.' }
-    # 1.20.1 and 1.21.1 keep the host data in level.dat; 26.3 keeps it in a player file.
-    $hostFile = if ($band.compileTarget -eq '26.3') { '\.dat$' } else { '^level\.dat$' }
-    if (@($originals | Where-Object { $_ -match $hostFile }).Count -eq 0) { $failures += "rescue: original/ [$($originals -join ', ')] has no host data file." }
+    # 1.20.1 and 1.21.1 keep the host data in level.dat; 26.3 keeps it in the host's player file.
+    $hostFile = if ($band.compileTarget -eq '26.3') { '^[0-9a-f-]{36}\.dat' } else { '^level\.dat' }
+    foreach ($suffix in '$', '_old$') {
+        if (@($originals | Where-Object { $_ -match "$hostFile$suffix" }).Count -ne 1) {
+            $failures += "rescue: original/ [$($originals -join ', ')] has no host data file matching $hostFile$suffix."
+        }
+    }
     if (-not $text.Contains('pdrtest:broken')) { $failures += 'rescue: report.txt does not name pdrtest:broken.' }
 }
 if ($rescue.Log -match "Couldn't place player in world") { $failures += "rescue: the log has 'Couldn't place player in world'." }
@@ -169,8 +181,7 @@ if ($rescue.Log -match "Couldn't place player in world") { $failures += "rescue:
 # 5. Opening again with a reader that works.
 Set-Modes ''
 $before = @(Get-Incidents)
-$again = Invoke-WorldRun -Step 'opening again' -WorldName 'S8' -Until "$player joined the game"
-$failures += $again.Health
+Invoke-WorldRun -Step 'opening again' -WorldName 'S8' -Until "$player joined the game" | Out-Null
 $new = @(Get-Incidents | Where-Object { $before.FullName -notcontains $_.FullName })
 if ($new.Count -ne 0) { $failures += "opening again: $($new.Count) new incident(s), expected none." }
 

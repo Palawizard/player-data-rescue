@@ -157,7 +157,7 @@ function Stop-RealClientProcess {
 function Close-RealClient {
     # Closes the game window the way a player does, so the game stops cleanly and a singleplayer
     # world is saved. Windows: the window's close message. Hyprland: its window close dispatcher.
-    # Elsewhere the game is stopped with a signal, which does not save a singleplayer world.
+    # Elsewhere the game is stopped with a signal, not tried with a singleplayer world.
     # Returns true when the game stopped on its own within a minute; the process is killed otherwise.
     param([hashtable]$Client)
     $game = Get-Process -Id $Client.GamePid -ErrorAction SilentlyContinue
