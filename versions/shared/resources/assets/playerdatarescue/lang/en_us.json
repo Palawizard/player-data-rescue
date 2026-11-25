@@ -3,5 +3,10 @@
   "playerdatarescue.player.previous_save": "Your latest save could not be read, so you joined with the save before it.",
   "playerdatarescue.player.unreadable": "Your saved data could not be read, so you joined as a new player. An admin has a copy of the old files.",
   "playerdatarescue.operator.rescued": "[Player Data Rescue] %s joined after a rescue: %s set aside. Most likely: %s. Report: %s",
-  "playerdatarescue.operator.diagnosis": "[Player Data Rescue] %s could not join, and the saved data is not the cause. Most likely: %s. Report: %s"
+  "playerdatarescue.operator.diagnosis": "[Player Data Rescue] %s could not join, and the saved data is not the cause. Most likely: %s. Report: %s",
+  "playerdatarescue.player.restored_one": "One set-aside part of your saved data was restored.",
+  "playerdatarescue.player.restored": "%s set-aside parts of your saved data were restored.",
+  "playerdatarescue.player.restore_queued": "An admin restored some of your saved data. Leave and join again to get it back.",
+  "playerdatarescue.operator.recurring": "[Player Data Rescue] %s saves player data it cannot load back (%s). That data is set aside at every login until %s is fixed. Report it to %s with the file below. File: %s",
+  "playerdatarescue.operator.recurring_unknown": "[Player Data Rescue] A mod saves player data it cannot load back (%s), and no mod stands out. That data is set aside at every login until that mod is fixed. Report it to the mod that owns this data, with the file below. File: %s"
 }

@@ -1,11 +1,8 @@
 package fr.palawi.playerdatarescue.mc;
 
 import fr.palawi.playerdatarescue.core.ModInfo;
-import fr.palawi.playerdatarescue.core.attribution.Attribution;
-import fr.palawi.playerdatarescue.core.attribution.Suspect;
 import fr.palawi.playerdatarescue.core.incident.IncidentFiles;
 import fr.palawi.playerdatarescue.core.incident.IncidentStore;
-import fr.palawi.playerdatarescue.core.incident.Outcome;
 import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
 import fr.palawi.playerdatarescue.core.recurring.RecurringIssues;
 import fr.palawi.playerdatarescue.core.rescue.RescueResult;
@@ -13,7 +10,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -21,86 +17,106 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The game side of recurring issues (SPEC.md section 4.4): a rescue hands its set-aside units
- * over, the keys that keep failing go to their record instead of the incident, operators hear
- * about each key once per server start, and a join without a failure ends the streaks and closes
- * the records of keys that load again. Called on the server thread.
+ * The game side of recurring issues (SPEC.md section 4.4). A rescue that kept its incident hands
+ * its set-aside units over: the keys that keep failing are counted in their record, and operators
+ * hear about each key once per server start. A join without a failure ends the streaks and closes
+ * the records of keys that load again. Nothing here changes an incident. Called on the server
+ * thread.
  */
 final class RecurringService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModInfo.MOD_ID);
 
-    /** Players with a streak or in a record, per world, read from disk at the first join into it. */
-    private static final Map<Path, Set<UUID>> CONCERNED = new HashMap<>();
-    /** Keys operators were told about since the server started, per world. */
-    private static final Map<Path, Set<String>> TOLD = new HashMap<>();
+    /** Per running server, so a new start, or a new integrated server, starts afresh. */
+    private static final Map<Object, State> STATES = new WeakHashMap<>();
+
+    private static final class State {
+        /** Players with a streak or in a record, per world, read from disk at the first join into it. */
+        final Map<Path, Set<UUID>> concerned = new HashMap<>();
+        /** Keys operators were told about since this server started, per world. */
+        final Map<Path, Set<String>> told = new HashMap<>();
+    }
 
     private RecurringService() {}
 
     /**
-     * @param rest the rescue result without the recurring keys, for the incident
-     * @param recurring the keys whose failure went to their record
+     * The rescue of this join kept its incident. Counts its mod data units towards recurring
+     * issues; a failure here is logged and changes nothing for the player or the incident.
      */
-    record Split(RescueResult rest, Set<String> recurring, List<RecurringIssues.Issue> issues) {
-        boolean onlyRecurring() {
-            return !recurring.isEmpty() && rest.aside().isEmpty();
+    static void rescued(GameJoin join, RescueResult result) {
+        try {
+            Optional<List<RecurringIssues.Failure>> failures = RecurringIssues.failures(result);
+            if (failures.isEmpty()) {
+                return;
+            }
+            RecurringIssues.Recorded recorded = issues(join.worldDirectory())
+                    .record(
+                            join.id(),
+                            join.name(),
+                            failures.get(),
+                            RescueService.config().recurringThreshold(),
+                            Instant.now());
+            concerned(join).add(join.id());
+            for (RecurringIssues.Issue issue : recorded.created()) {
+                LOGGER.warn(
+                        "[{}] {} fails to load at every join; it is now a recurring issue, recorded in {}",
+                        ModInfo.MOD_ID,
+                        issue.key(),
+                        issue.file());
+            }
+            tellOperators(join, recorded.touched());
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("[{}] could not update the recurring issues of {}", ModInfo.MOD_ID, join.name(), e);
         }
     }
 
-    /** Records the set-aside units of a rescue; only a rescue with the salvaged data counts. */
-    static Split split(GameJoin join, RescueResult result) throws IOException {
-        if (result.outcome() != Outcome.RESCUED || result.aside().isEmpty()) {
-            return new Split(result, Set.of(), List.of());
+    /**
+     * A join without a failure. For a player with a streak or in a record, the streaks end, and
+     * the player's records whose key is in their data close: that key loaded again.
+     */
+    static void joined(GameJoin join) {
+        try {
+            if (!RescueService.active() || !concerned(join).contains(join.id())) {
+                return;
+            }
+            RecurringIssues issues = issues(join.worldDirectory());
+            Optional<NbtCompound> data = join.source().read();
+            Set<String> keys = data.map(RecurringIssues::keys).orElse(Set.of());
+            for (RecurringIssues.Issue closed : issues.joined(join.id(), keys, Instant.now())) {
+                LOGGER.warn(
+                        "[{}] {} loaded again for {}; its recurring issue is closed",
+                        ModInfo.MOD_ID,
+                        closed.key(),
+                        join.name());
+                told(join.server(), join.worldDirectory()).remove(closed.key());
+            }
+            if (!issues.concerns(join.id())) {
+                concerned(join).remove(join.id());
+            }
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("[{}] could not update the recurring issues of {}", ModInfo.MOD_ID, join.name(), e);
         }
-        List<RecurringIssues.Failure> failures = new ArrayList<>();
-        for (RescueResult.SetAside aside : result.aside()) {
-            failures.add(new RecurringIssues.Failure(
-                    aside.unit().id(),
-                    aside.unit().payload(),
-                    aside.suspects().stream().findFirst().map(Suspect::modId)));
-        }
-        RecurringIssues issues = issues(join.worldDirectory());
-        RecurringIssues.Outcome outcome = issues.record(
-                join.id(), join.name(), failures, RescueService.config().recurringThreshold(), Instant.now());
-        concerned(join.worldDirectory()).add(join.id());
-        if (outcome.recurring().isEmpty()) {
-            return new Split(result, Set.of(), List.of());
-        }
-        List<RescueResult.SetAside> rest = result.aside().stream()
-                .filter(a -> !outcome.recurring().contains(a.unit().id()))
-                .toList();
-        List<Suspect> suspects = Attribution.merge(
-                rest.stream().map(RescueResult.SetAside::suspects).toList());
-        RescueResult remaining = new RescueResult(
-                result.trigger(),
-                result.outcome(),
-                rest,
-                result.coreChanges(),
-                suspects,
-                result.lastFailure(),
-                result.attempts());
-        List<RecurringIssues.Issue> touched = new ArrayList<>(outcome.created());
-        touched.addAll(outcome.updated());
-        for (RecurringIssues.Issue issue : outcome.created()) {
-            LOGGER.warn(
-                    "[{}] {} fails to load at every join; it is now a recurring issue, recorded in {}",
-                    ModInfo.MOD_ID,
-                    issue.key(),
-                    issue.file());
-        }
-        return new Split(remaining, outcome.recurring(), touched);
     }
 
-    /** Tells online operators about each recurring key once per server start. */
-    static void tellOperators(GameJoin join, Split split) {
+    /** An operator closed the record of {@code key}: if it comes back, operators hear about it again. */
+    static void dismissed(Object server, Path world, String key) {
+        told(server, world).remove(key);
+    }
+
+    static RecurringIssues issues(Path world) {
+        return new RecurringIssues(new IncidentStore(world).root());
+    }
+
+    private static void tellOperators(GameJoin join, List<RecurringIssues.Issue> issues) {
         if (!RescueService.config().notifyOperators()) {
             return;
         }
-        Set<String> told = TOLD.computeIfAbsent(key(join.worldDirectory()), k -> new HashSet<>());
-        for (RecurringIssues.Issue issue : split.issues()) {
+        Set<String> told = told(join.server(), join.worldDirectory());
+        for (RecurringIssues.Issue issue : issues) {
             if (told.contains(issue.key())) {
                 continue;
             }
@@ -116,44 +132,14 @@ final class RecurringService {
         }
     }
 
-    /**
-     * A join without a failure. For a player with a streak or in a record, the streaks end, and
-     * the records of keys found in their data close: those keys loaded again.
-     */
-    static void joined(GameJoin join) {
-        try {
-            if (!RescueService.active() || !concerned(join.worldDirectory()).contains(join.id())) {
-                return;
-            }
-            RecurringIssues issues = issues(join.worldDirectory());
-            issues.joined(join.id());
-            Optional<NbtCompound> data = join.source().read();
-            if (data.isPresent()) {
-                for (RecurringIssues.Issue closed : issues.loaded(RecurringIssues.keys(data.get()), Instant.now())) {
-                    LOGGER.warn(
-                            "[{}] {} loaded again for {}; its recurring issue is closed",
-                            ModInfo.MOD_ID,
-                            closed.key(),
-                            join.name());
-                    TOLD.getOrDefault(key(join.worldDirectory()), new HashSet<>())
-                            .remove(closed.key());
-                }
-            }
-            if (!issues.concerns(join.id())) {
-                concerned(join.worldDirectory()).remove(join.id());
-            }
-        } catch (IOException | RuntimeException e) {
-            LOGGER.error("[{}] could not update the recurring issues of {}", ModInfo.MOD_ID, join.name(), e);
-        }
+    private static Set<String> told(Object server, Path world) {
+        return STATES.computeIfAbsent(server, s -> new State()).told.computeIfAbsent(key(world), k -> new HashSet<>());
     }
 
-    static RecurringIssues issues(Path world) {
-        return new RecurringIssues(new IncidentStore(world).root());
-    }
-
-    private static Set<UUID> concerned(Path world) throws IOException {
-        Path key = key(world);
-        Set<UUID> players = CONCERNED.get(key);
+    private static Set<UUID> concerned(GameJoin join) throws IOException {
+        State state = STATES.computeIfAbsent(join.server(), s -> new State());
+        Path world = key(join.worldDirectory());
+        Set<UUID> players = state.concerned.get(world);
         if (players == null) {
             players = new HashSet<>();
             Path root = new IncidentStore(world).root();
@@ -165,7 +151,7 @@ final class RecurringService {
             for (RecurringIssues.Issue issue : issues(world).all()) {
                 players.addAll(issue.players().keySet());
             }
-            CONCERNED.put(key, players);
+            state.concerned.put(world, players);
         }
         return players;
     }

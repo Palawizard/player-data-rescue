@@ -16,6 +16,7 @@ import fr.palawi.playerdatarescue.core.restore.RestoreQueue;
 import fr.palawi.playerdatarescue.core.restore.Restorer;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -178,7 +179,6 @@ public final class PdrCommands {
                 players = IncidentFiles.players(root);
                 if (players.isEmpty()) {
                     say(c, Component.literal("No player has an incident."));
-                    return 1;
                 }
             } else {
                 players = List.of(require(c, argument).id());
@@ -234,10 +234,10 @@ public final class PdrCommands {
                                     .append(Texts.action("dismiss", "/" + ROOT + " dismiss recurring " + issue.key())));
                 }
             }
-            if (argument == null) {
+            if (argument == null && !players.isEmpty()) {
                 say(c, Component.literal("Details: /" + ROOT + " list <player>"));
             }
-            return players.size();
+            return Math.max(1, players.size());
         });
     }
 
@@ -353,11 +353,12 @@ public final class PdrCommands {
     /** Closes a recurring issue: its record moves to recurring/closed/ with its payloads. */
     private static int dismissRecurring(CommandContext<CommandSourceStack> context) throws IOException {
         String key = StringArgumentType.getString(context, "key");
-        RecurringIssues issues =
-                RecurringService.issues(world(context.getSource().getServer()));
+        MinecraftServer server = context.getSource().getServer();
+        RecurringIssues issues = RecurringService.issues(world(server));
         RecurringIssues.Issue issue =
                 issues.find(key).orElseThrow(() -> new IllegalArgumentException("No recurring issue for " + key + "."));
-        issues.close(issue, java.time.Instant.now());
+        issues.close(issue, Instant.now());
+        RecurringService.dismissed(server, world(server), key);
         say(
                 context,
                 Component.literal("Closed the recurring issue " + key + ". Its record is kept in "

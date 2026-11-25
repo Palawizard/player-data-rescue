@@ -15,6 +15,9 @@ import java.util.UUID;
  * game calls the rescue needs. Each {@code common-<minecraft>} folder implements it.
  */
 public interface GameJoin {
+    /** The running server: a new start, or a new integrated server, is a new object. */
+    Object server();
+
     UUID id();
 
     String name();

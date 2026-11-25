@@ -5,6 +5,7 @@ import fr.palawi.playerdatarescue.core.data.CoreValues;
 import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
 import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
+import fr.palawi.playerdatarescue.core.recurring.RecurringIssues;
 import fr.palawi.playerdatarescue.core.rescue.RescueTarget;
 import fr.palawi.playerdatarescue.mixin.PlayerListAccess;
 import java.nio.file.Path;
@@ -64,6 +65,11 @@ public final class Join263 implements GameJoin {
         this.clientInformation = clientInformation;
         this.cookie = cookie;
         this.spawnTask = spawnTask;
+    }
+
+    @Override
+    public Object server() {
+        return server;
     }
 
     @Override
@@ -225,8 +231,7 @@ public final class Join263 implements GameJoin {
     }
 
     @Override
-    public int tellOperatorsRecurring(
-            fr.palawi.playerdatarescue.core.recurring.RecurringIssues.Issue issue, String file, int permissionLevel) {
+    public int tellOperatorsRecurring(RecurringIssues.Issue issue, String file, int permissionLevel) {
         int told = 0;
         for (ServerPlayer operator : server.getPlayerList().getPlayers()) {
             if (!operator.getUUID().equals(id())

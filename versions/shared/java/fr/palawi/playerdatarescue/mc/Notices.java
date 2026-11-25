@@ -62,8 +62,8 @@ public final class Notices {
 
     /** To operators, once per server start for each recurring issue (SPEC.md section 4.4). */
     public static Component recurring(RecurringIssues.Issue issue, String file) {
-        String mod = issue.suspect().orElse("a mod");
-        return Component.translatableWithFallback(
+        MutableComponent text = issue.suspect()
+                .map(mod -> Component.translatableWithFallback(
                         "playerdatarescue.operator.recurring",
                         "[Player Data Rescue] %s saves player data it cannot load back (%s). That data is set aside at"
                                 + " every login until %s is fixed. Report it to %s with the file below. File: %s",
@@ -71,8 +71,15 @@ public final class Notices {
                         issue.key(),
                         mod,
                         mod,
-                        file)
-                .withStyle(ChatFormatting.GOLD)
+                        file))
+                .orElseGet(() -> Component.translatableWithFallback(
+                        "playerdatarescue.operator.recurring_unknown",
+                        "[Player Data Rescue] A mod saves player data it cannot load back (%s), and no mod stands out."
+                                + " That data is set aside at every login until that mod is fixed. Report it to the"
+                                + " mod that owns this data, with the file below. File: %s",
+                        issue.key(),
+                        file));
+        return text.withStyle(ChatFormatting.GOLD)
                 .append(" ")
                 .append(Texts.action("dismiss", "/pdrescue dismiss recurring " + issue.key()));
     }

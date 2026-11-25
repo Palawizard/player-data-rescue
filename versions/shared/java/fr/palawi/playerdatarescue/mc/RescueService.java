@@ -187,11 +187,6 @@ public final class RescueService {
             throw e;
         }
         RestoreService.rescued(join, result, folder);
-        RecurringService.Split recurring = RecurringService.split(join, result);
-        result = recurring.rest();
-        if (recurring.onlyRecurring()) {
-            return rescuedRecurring(join, store, folder, recurring);
-        }
         Incident incident;
         try {
             incident = IncidentRecorder.record(
@@ -235,51 +230,22 @@ public final class RescueService {
             // The game saves the player again later, at the latest when they leave.
             LOGGER.error("[{}] {} was rescued, but saving them right away failed", ModInfo.MOD_ID, join.name(), e);
         }
-        if (incident == null) {
-            return true;
+        if (incident != null) {
+            LOGGER.warn(
+                    "[{}] rescued {} ({}, {}): {} part(s) set aside after {} attempt(s). Report: {}",
+                    ModInfo.MOD_ID,
+                    join.name(),
+                    result.trigger(),
+                    result.outcome().name().toLowerCase(Locale.ROOT),
+                    incident.entries().size(),
+                    result.attempts(),
+                    folder.resolve("report.txt"));
+            notify(join, incident, shown, result.outcome());
         }
-        LOGGER.warn(
-                "[{}] rescued {} ({}, {}): {} part(s) set aside after {} attempt(s). Report: {}",
-                ModInfo.MOD_ID,
-                join.name(),
-                result.trigger(),
-                result.outcome().name().toLowerCase(Locale.ROOT),
-                incident.entries().size(),
-                result.attempts(),
-                folder.resolve("report.txt"));
-        notify(join, incident, shown, result.outcome());
-        RecurringService.tellOperators(join, recurring);
+        RecurringService.rescued(join, result);
         return true;
     }
 
-    /**
-     * Every unit this join set aside is a recurring issue: its record holds the payload, so no new
-     * incident is kept (SPEC.md section 4.4). The player is in with everything else.
-     */
-    private static boolean rescuedRecurring(
-            GameJoin join, IncidentStore store, Path folder, RecurringService.Split recurring) {
-        try {
-            join.save();
-            store.discard(folder);
-        } catch (IOException | RuntimeException e) {
-            LOGGER.error("[{}] {} was rescued, but saving them right away failed", ModInfo.MOD_ID, join.name(), e);
-        }
-        LOGGER.warn(
-                "[{}] rescued {}: {} set aside again (recurring issue)",
-                ModInfo.MOD_ID,
-                join.name(),
-                String.join(", ", recurring.recurring()));
-        if (config.notifyPlayer()) {
-            join.tellPlayer(Outcome.RESCUED);
-        }
-        RecurringService.tellOperators(join, recurring);
-        return true;
-    }
-
-    /**
-     * A player with no saved data at all could not join: whatever failed, the saved data is not
-     * the cause (SPEC.md section 2). Writes the diagnosis and tries no rescue until a restart.
-     */
     private static boolean diagnoseNewPlayer(GameJoin join, Exception failure) throws IOException {
         join.discardHalfPlaced();
         Path folder = new IncidentStore(join.worldDirectory()).create(join.id(), LocalDateTime.now());

@@ -124,6 +124,10 @@ Permission checks and clickable text differ by version and live in each `common-
 
 The core holds the restore (`core/restore`): `Restorer` runs the commands (queue, dismiss), `RestoreJoin` the join side (settle a past record, merge the queue, decide each entry from where the join ended), `RestoreMerge` puts entries into a copy of the player's data and says which tags each entry put there, and `RestoreQueue` and `RestorePending` are the queue file and the record of entries on their way in. The bands only call it from the hooks above (`RestoreService`): they hash and read the player's data, write the merged data where the game reads it (`DataSource#write`, as an attempt does), put the data back with the same `DataSource` when the player does not get in, and drop the stacks that found no slot. The backup incident and the record are written before the data changes. Every rule that keeps an entry restorable in one place only is tested in the core (`RestoreJoinTest`, `RestoreBackupTest`, `RestorerTest`).
 
+## Recurring issues
+
+The core holds them (`core/recurring`): `RecurringIssues#failures` picks the units of a rescue that count (mod data of a rescue that kept the salvaged data), `RecurringIssues#record` updates the streaks (`Streaks`, one file per player) and the records, and `RecurringIssues#joined` ends the streaks of a normal join and closes the records whose key is back in the player's data. The bands call it from `RecurringService`, after the incident is written and the player told, inside its own try: a failure there is logged and changes nothing for the player or the incident. The players with a streak or a record, and the keys operators were told about, are kept in memory per running server and per world, so a normal join of anyone else costs one set lookup, and a new start tells operators again.
+
 ## Rescue strategy
 
 1. Guard the placement with an injection inside the catch of the login handler (ADR-PDR-009). On a failure, hand over to the rescue flow; when it lets the player in, the handler returns there. The normal path is unchanged apart from two small hooks (S12).
