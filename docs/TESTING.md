@@ -75,7 +75,7 @@ Observed on 2026-11-16 on every Tier A band (Forge and Fabric 1.20.1; Forge, Fab
 
 For S2, an operator (`OpBot`, made operator over RCON) is online during the rescue and must receive the operator notice. Every bot speaks the vanilla protocol without this mod (it is not the real game client) and prints each system message it receives (`[join-bot] chat: ...`), which covers S9: the client connects normally and the messages decode as vanilla text components.
 
-The ways a restore join can end that a dedicated server does not produce on demand (a join that fails after the restore wrote the data, a rescue that sets a restored stack aside again, two incidents with the same entry id, a crash between the write and the join's end, stacks with no free slot) are covered by the core tests `RestoreJoinTest` and `RestorerTest`, on S1Bot's real player file: none of them may leave the same items restorable twice.
+The ways a restore join can end that a dedicated server does not produce on demand (a join that fails after the restore wrote the data, a rescue that sets a restored stack aside again, two incidents with the same entry id, a crash between the write and the join's end, stacks with no free slot) are covered by the core tests `RestoreJoinTest`, `RestoreBackupTest` and `RestorerTest`, on the real player files of S1Bot (Fabric 1.20.1), S2Bot (Forge 1.20.1) and S4Bot (Forge 1.21.1): none of them may leave the same items restorable twice.
 
 After the scenarios, the server is stopped and started again without the release JAR (S10): the world must load, `S12Bot` must join, the mod must log nothing, and every file under `playerdatarescue/` must keep its SHA-256.
 
