@@ -95,19 +95,18 @@ public final class RecurringIssues {
      * not count at all. Only a rescue that ends with the salvaged data counts, and only its mod data
      * units: an attachment or an unknown top-level key, which a mod writes again at every save. A
      * slot or an effect is gone from the data once set aside, and a minimal profile sets whole
-     * sections aside, not one key. A unit counts only when the rescue singled it out: when one
-     * failed load made it set aside the units of several namespaces at once, because no suspect
-     * matched, it cannot tell which key broke, so none of them counts.
+     * sections aside, not one key. A unit counts only when the rescue singled out its mod: when one
+     * failed load made it set aside the units of several mods at once, because no suspect matched,
+     * it cannot tell which one broke, so none of them counts. A key without a namespace is its own
+     * mod here, since nothing ties it to another key.
      */
     public static Optional<List<Failure>> failures(RescueResult result) {
         if (result.outcome() != Outcome.RESCUED) {
             return Optional.empty();
         }
-        Map<Throwable, Set<Optional<String>>> namespaces = new IdentityHashMap<>();
+        Map<Throwable, Set<String>> namespaces = new IdentityHashMap<>();
         for (RescueResult.SetAside aside : result.aside()) {
-            namespaces
-                    .computeIfAbsent(aside.failure(), f -> new HashSet<>())
-                    .add(aside.unit().namespace());
+            namespaces.computeIfAbsent(aside.failure(), f -> new HashSet<>()).add(owner(aside.unit()));
         }
         return Optional.of(result.aside().stream()
                 .filter(a -> modData(a.unit()))
@@ -117,6 +116,11 @@ public final class RecurringIssues {
                         a.unit().payload(),
                         a.suspects().stream().findFirst().map(Suspect::modId)))
                 .toList());
+    }
+
+    /** The mod a unit belongs to, as far as the data says; a key without a namespace stands alone. */
+    private static String owner(Unit unit) {
+        return unit.namespace().map(n -> "mod:" + n).orElse("unit:" + unit.id());
     }
 
     static boolean modData(Unit unit) {

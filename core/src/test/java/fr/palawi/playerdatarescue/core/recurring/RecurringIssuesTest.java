@@ -346,6 +346,31 @@ class RecurringIssuesTest {
     }
 
     @Test
+    void keysWithoutANamespaceSetAsideTogetherDoNotCount() throws Exception {
+        NbtCompound data = Fixtures.read("1.20.1-fabric/S2Bot.dat");
+        data.put("FooData", NbtValue.ofInt(1));
+        data.put("cardinal_components", NbtValue.ofInt(2));
+        List<Unit> plain = PlayerData.of(data).units().stream()
+                .filter(u -> u.id().equals("key.FooData") || u.id().equals("key.cardinal_components"))
+                .toList();
+        assertEquals(2, plain.size());
+        Throwable bulk = new IllegalStateException("no suspect matched");
+
+        RescueResult together = new RescueResult(
+                Trigger.T1,
+                Outcome.RESCUED,
+                plain.stream()
+                        .map(u -> new RescueResult.SetAside(u, bulk, List.of()))
+                        .toList(),
+                List.of(),
+                List.of(),
+                bulk,
+                2);
+
+        assertTrue(RecurringIssues.failures(together).orElseThrow().isEmpty());
+    }
+
+    @Test
     void theKeysOfADataFileAreNamedAsTheRescueNamesItsUnits() throws Exception {
         assertTrue(
                 RecurringIssues.keys(Fixtures.read("1.20.1-forge/S12Bot.dat")).contains("attachment.pdrtest:broken"));
