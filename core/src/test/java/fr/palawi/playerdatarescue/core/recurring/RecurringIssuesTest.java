@@ -218,6 +218,35 @@ class RecurringIssuesTest {
     }
 
     @Test
+    void anUnreadableRecordIsLeftOutWithoutStoppingTheOthers() throws Exception {
+        fail(PLAYER, 0);
+        fail(PLAYER, 1);
+        fail(PLAYER, 2);
+        Path broken = issues.folder().resolve(RecurringIssues.fileName("key.other:data") + ".json");
+        Files.writeString(broken, "{\"key\": \"key.other:data\"}");
+
+        assertEquals(
+                List.of(KEY),
+                issues.all().stream().map(RecurringIssues.Issue::key).toList());
+        assertEquals(List.of(broken), issues.unreadable());
+        assertEquals(1, fail(PLAYER, 3).updated().size());
+        assertTrue(issues.concerns(PLAYER));
+    }
+
+    @Test
+    void anUnreadableStreakFileCountsAsNone() throws Exception {
+        Files.createDirectories(root.resolve(SECOND.toString()));
+        Files.writeString(root.resolve(SECOND.toString()).resolve(RecurringIssues.STREAKS), "not json");
+        Files.createDirectories(root.resolve(PLAYER.toString()));
+        Files.writeString(root.resolve(PLAYER.toString()).resolve(RecurringIssues.STREAKS), "not json");
+
+        assertTrue(fail(PLAYER, 0).touched().isEmpty());
+        assertTrue(fail(PLAYER, 1).touched().isEmpty());
+        assertEquals(1, fail(PLAYER, 2).created().size());
+        assertEquals(3, issues.find(KEY).orElseThrow().count());
+    }
+
+    @Test
     void aThresholdBelowTwoIsRefused() {
         assertThrows(
                 IllegalArgumentException.class,

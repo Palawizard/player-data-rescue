@@ -31,9 +31,17 @@ final class Streaks {
         this.root = root;
     }
 
-    Map<String, Integer> of(UUID player) throws IOException {
+    /** The player's streaks; an unreadable file counts as none, and the next write replaces it. */
+    Map<String, Integer> of(UUID player) {
         Path file = file(player);
-        return Files.isRegularFile(file) ? read(file).streaks() : Map.of();
+        if (!Files.isRegularFile(file)) {
+            return Map.of();
+        }
+        try {
+            return read(file).streaks();
+        } catch (IOException e) {
+            return Map.of();
+        }
     }
 
     boolean exists(UUID player) {
@@ -51,10 +59,9 @@ final class Streaks {
                 Path file = dir.resolve(FILE);
                 Optional<UUID> id = uuid(dir.getFileName().toString());
                 if (id.isPresent() && Files.isRegularFile(file)) {
-                    Player player = read(file);
-                    if (player.streaks().containsKey(key)) {
-                        players.put(id.get(), player);
-                    }
+                    readable(file)
+                            .filter(player -> player.streaks().containsKey(key))
+                            .ifPresent(player -> players.put(id.get(), player));
                 }
             }
         }
@@ -87,7 +94,11 @@ final class Streaks {
         if (!Files.isRegularFile(file)) {
             return;
         }
-        Player current = read(file);
+        Optional<Player> read = readable(file);
+        if (read.isEmpty()) {
+            return;
+        }
+        Player current = read.get();
         Map<String, Integer> rest = new LinkedHashMap<>(current.streaks());
         rest.remove(key);
         write(player, current.name(), rest);
@@ -95,6 +106,14 @@ final class Streaks {
 
     private Path file(UUID player) {
         return root.resolve(player.toString()).resolve(FILE);
+    }
+
+    private static Optional<Player> readable(Path file) {
+        try {
+            return Optional.of(read(file));
+        } catch (IOException e) {
+            return Optional.empty();
+        }
     }
 
     private static Player read(Path file) throws IOException {

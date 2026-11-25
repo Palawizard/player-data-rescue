@@ -6,6 +6,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import fr.palawi.playerdatarescue.core.attribution.Suspect;
+import fr.palawi.playerdatarescue.core.data.PlayerData;
 import fr.palawi.playerdatarescue.core.data.Unit;
 import fr.palawi.playerdatarescue.core.incident.Outcome;
 import fr.palawi.playerdatarescue.core.io.AtomicFiles;
@@ -188,7 +189,8 @@ public final class RecurringIssues {
 
     /**
      * Closes a record: it moves to {@code recurring/closed/} with its payloads, nothing is deleted.
-     * The record file moves last, so an open record never points to payloads that are gone.
+     * The record file moves last: if a move fails, the record stays open and still holds both
+     * payloads as SNBT, and a payload file already moved is in {@code closed/}.
      */
     public void close(Issue issue, Instant now) throws IOException {
         Path closed = folder().resolve("closed");
@@ -218,27 +220,51 @@ public final class RecurringIssues {
         return Optional.of(issue);
     }
 
-    /** Every open record, by file name. */
+    /**
+     * Every open record that can be read, by file name. A record edited into an unreadable state is
+     * left out, so it does not stop the others; {@link #unreadable} names it.
+     */
     public List<Issue> all() throws IOException {
-        if (!Files.isDirectory(folder())) {
-            return List.of();
-        }
         List<Issue> issues = new ArrayList<>();
-        try (Stream<Path> list = Files.list(folder())) {
-            for (Path file : list.filter(p -> p.getFileName().toString().endsWith(".json"))
-                    .filter(Files::isRegularFile)
-                    .sorted()
-                    .toList()) {
+        for (Path file : recordFiles()) {
+            try {
                 issues.add(read(file));
+            } catch (IOException e) {
+                // Named by unreadable().
             }
         }
         return issues;
     }
 
+    /** The record files {@link #all} leaves out. */
+    public List<Path> unreadable() throws IOException {
+        List<Path> files = new ArrayList<>();
+        for (Path file : recordFiles()) {
+            try {
+                read(file);
+            } catch (IOException e) {
+                files.add(file);
+            }
+        }
+        return files;
+    }
+
+    private List<Path> recordFiles() throws IOException {
+        if (!Files.isDirectory(folder())) {
+            return List.of();
+        }
+        try (Stream<Path> list = Files.list(folder())) {
+            return list.filter(p -> p.getFileName().toString().endsWith(".json"))
+                    .filter(Files::isRegularFile)
+                    .sorted()
+                    .toList();
+        }
+    }
+
     /** The keys of a player's saved data, as the rescue names its units, for {@link #joined}. */
     public static Set<String> keys(NbtCompound data) {
         Set<String> keys = new LinkedHashSet<>();
-        for (String container : List.of("ForgeCaps", "neoforge:attachments")) {
+        for (String container : PlayerData.ATTACHMENT_CONTAINERS) {
             data.compound(container).ifPresent(c -> c.keys().forEach(k -> keys.add("attachment." + k)));
         }
         data.keys().forEach(k -> keys.add("key." + k));
