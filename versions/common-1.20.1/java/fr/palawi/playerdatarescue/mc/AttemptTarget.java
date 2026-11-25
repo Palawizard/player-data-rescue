@@ -23,19 +23,12 @@ final class AttemptTarget implements RescueTarget {
     private final Connection connection;
     private final GameProfile profile;
     private final DataSource source;
-    private final StaleTeleports teleports;
 
-    AttemptTarget(
-            MinecraftServer server,
-            Connection connection,
-            GameProfile profile,
-            DataSource source,
-            StaleTeleports teleports) {
+    AttemptTarget(MinecraftServer server, Connection connection, GameProfile profile, DataSource source) {
         this.server = server;
         this.connection = connection;
         this.profile = profile;
         this.source = source;
-        this.teleports = teleports;
     }
 
     @Override
@@ -51,13 +44,16 @@ final class AttemptTarget implements RescueTarget {
         forgetPacketFilters();
         PlayerList players = server.getPlayerList();
         ServerPlayer player = new ServerPlayer(server, server.overworld(), profile);
+        HeldPackets.hold(connection);
         try {
             players.placeNewPlayer(connection, player);
-        } catch (RuntimeException e) {
-            Join1201.discard(players, player, teleports);
+            // A packet the game sends can still throw here, as it would inside the placement.
+            HeldPackets.release(connection);
+        } catch (Exception | LinkageError e) {
+            Join1201.discard(players, player);
+            HeldPackets.drop(connection);
             throw e;
         }
-        teleports.placed(player);
     }
 
     /**

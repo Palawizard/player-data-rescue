@@ -1,8 +1,10 @@
 # Real game client checks, dot-sourced by prod-smoke.ps1 (-RealClient) and by
 # real-client-singleplayer.ps1. The client is the real Minecraft client, started by the
 # portablemc launcher with an offline account (ADR-PDR-011). It opens a game window, so these
-# checks run on a desktop, never in CI. Works on Windows PowerShell 5.1 and on PowerShell 7.
-# Uses from common.ps1: $ProjectRoot, $OnWindows, Get-BandProperties.
+# checks run on a desktop, never in CI. Written for Windows PowerShell 5.1 and PowerShell 7
+# (check-powershell-compat.ps1), run so far with PowerShell 7 on Linux. Uses from common.ps1:
+# $ProjectRoot, $OnWindows and Get-BandProperties; the dedicated server scenarios also use
+# $javaExe, $ServerPort, $BandId, $Loader and $band from prod-smoke.ps1.
 
 $PortableMcVersion = '5.0.6'
 
@@ -33,9 +35,10 @@ function Get-ClientRoot {
 }
 
 function Get-ClientVersion {
-    # The portablemc version id: the vanilla client of the band, or the band's loader on the client.
-    param([object]$Band, [object]$LoaderConfig, [string]$Loader, [switch]$Vanilla)
-    if ($Vanilla) { return $Band.compileTarget }
+    # The portablemc version id: the band's vanilla client, or with -Loader the band's loader on
+    # the client, for a singleplayer world with the mods.
+    param([object]$Band, [object]$LoaderConfig, [string]$Loader)
+    if (-not $Loader) { return $Band.compileTarget }
     $props = Get-BandProperties $LoaderConfig
     switch ($Loader) {
         'fabric' { return "fabric:$($Band.compileTarget):$($props['fabric_loader_version'])" }
@@ -64,6 +67,14 @@ function Write-ClientOptions {
     )
 }
 
+function Format-ProcessArgument {
+    # Start-Process joins its arguments with spaces and quotes none of them, so a path such as
+    # C:\Program Files\... would reach the launcher as two arguments.
+    param([string]$Value)
+    if ($Value -match '[\s"]') { return '"' + ($Value -replace '"', '\"') + '"' }
+    return $Value
+}
+
 function Start-RealClient {
     # Starts the client as player $Name, joining 127.0.0.1:$Port or opening the singleplayer
     # world $World of $GameDir. Returns once the launcher has started the game process.
@@ -82,7 +93,7 @@ function Start-RealClient {
     $launchArgs += $Version
     $startArgs = @{
         FilePath               = $Launcher
-        ArgumentList           = $launchArgs
+        ArgumentList           = @($launchArgs | ForEach-Object { Format-ProcessArgument $_ })
         # The test mod reads pdrtest.properties from the current directory.
         WorkingDirectory       = $GameDir
         RedirectStandardOutput = $output
@@ -145,8 +156,8 @@ function Stop-RealClientProcess {
 
 function Close-RealClient {
     # Closes the game window the way a player does, so the game stops cleanly and a singleplayer
-    # world is saved. Windows: the window's close message. Hyprland: its closewindow dispatcher.
-    # Elsewhere the game is stopped with a signal, which does not save a singleplayer world.
+    # world is saved. Windows: the window's close message. Hyprland: its window close dispatcher.
+    # Elsewhere the game is stopped with a signal, not tried with a singleplayer world.
     # Returns true when the game stopped on its own within a minute; the process is killed otherwise.
     param([hashtable]$Client)
     $game = Get-Process -Id $Client.GamePid -ErrorAction SilentlyContinue
@@ -186,6 +197,31 @@ function Test-RealClientHealthy {
     return , $problems
 }
 
+function Get-PlayerHeight {
+    param([string]$Player)
+    $answer = Invoke-RconCommand -Command "data get entity $Player Pos"
+    if ($answer -notmatch '\[(-?[0-9.E-]+)d, (-?[0-9.E-]+)d, (-?[0-9.E-]+)d\]') { throw "no position for $Player in '$($answer.Trim())'" }
+    return [double]::Parse($Matches[2], [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Test-RealClientFalls {
+    # The client moves its own player: lifted 3 blocks, it falls back, and the server sees the
+    # player's height drop. A client whose player is not in the world it shows sends no move and
+    # stays in the air: that is how the vanilla client looked after a second login packet, frozen
+    # and shaking on screen while the server saw nothing wrong.
+    param([string]$Player)
+    $lifted = (Get-PlayerHeight -Player $Player) + 3
+    Invoke-RconCommand -Command "execute as $Player at @s run tp @s ~ ~3 ~" | Out-Null
+    $deadline = (Get-Date).AddSeconds(5)
+    $height = $lifted
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $height = Get-PlayerHeight -Player $Player
+        if ($height -lt $lifted - 1) { return @{ Detail = "fell from $lifted to $height"; Problem = $null } }
+    }
+    return @{ Detail = "stayed at $height"; Problem = "$Player stayed in the air 5 s after a lift of 3 blocks (height $lifted, then $height): the client does not move its player." }
+}
+
 # The real client scenarios of a dedicated server, run by prod-smoke.ps1 -RealClient after the
 # join client scenarios. Uses from smoke-scenarios.ps1: Invoke-PrepareJoin, Set-PlayerModes,
 # Invoke-RconCommand, Get-LatestLogLength, Wait-ForLog, Get-LogSince, Test-ScenarioIncidents,
@@ -195,10 +231,10 @@ $realClientScenarios = @(
     # attachment itself (T4), so there is no rescue to see.
     @{ Id = 'S2'; Player = 'S2Client'; Prepare = 'attach'; Join = 'attach,attachment-throws'; Setup = @();
         Proof = 'saved attachment pdrtest:broken of S2Client as int'; SkipOn = @('neoforge') }
-    # S15 with a real client: the failed placement sent a first login packet, and the minimal
-    # profile is placed on the same connection, which sends a second one. The client must stay.
+    # S15 with a real client: the server places the player twice on one connection, the failed
+    # placement then the minimal profile, and the client only gets the second. The client must stay.
     @{ Id = 'S15'; Player = 'S15Client'; Prepare = 'attach'; Join = 'attach,placement-rejects-attachment'; Setup = @();
-        Proof = 'saved attachment pdrtest:broken of S15Client as int'; SecondLogin = $true }
+        Proof = 'saved attachment pdrtest:broken of S15Client as int'; TwoPlacements = $true }
 )
 $realClientStaySeconds = 30
 
@@ -207,6 +243,7 @@ function Invoke-RealClientScenario {
     $id = $Scenario.Id
     $player = $Scenario.Player
     $problems = @()
+    $fallDetail = 'not lifted'
     $offset = Invoke-PrepareJoin -Scenario $Scenario -Modes $Scenario.Prepare -RunSetup $false
     if (-not ((Get-LogSince -Offset $offset) -match $Scenario.Proof)) { throw "$id (real client) was not set up: no '$($Scenario.Proof)' line." }
     $before = Get-PlayerIncidents -Player $player
@@ -220,14 +257,16 @@ function Invoke-RealClientScenario {
         } else {
             Start-Sleep -Seconds $realClientStaySeconds
             $marker = "pdr-real-client-check-$player"
-            # A system message: "say" from RCON goes through the signed chat chain, which can
-            # leave the RCON answer pending on 1.21.1 Forge.
-            # The client's log is the proof; on 26.3 the RCON answer to this command can stay pending.
+            # A system message, not "say", whose RCON answer stayed pending on 1.21.1 Forge; on 26.3
+            # the answer to tellraw can stay pending too, and the client's log is the proof anyway.
             try { Invoke-RconCommand -Command "tellraw $player {`"text`":`"$marker`"}" | Out-Null }
             catch { Write-Host "  no RCON answer to the chat message for $player ($($_.Exception.Message))" }
             if (-not (Wait-RealClientLog -Client $client -Pattern ([regex]::Escape($marker)) -Seconds 20)) {
                 $problems += "$id (real client): $player did not get a chat message sent $realClientStaySeconds s after the rescue."
             }
+            $fall = Test-RealClientFalls -Player $player
+            $fallDetail = $fall.Detail
+            if ($fall.Problem) { $problems += "$id (real client): $($fall.Problem)" }
             $online = Invoke-RconCommand -Command 'list'
             if (-not $online.Contains($player)) { $problems += "$id (real client): $player is not in the player list ($($online.Trim()))." }
             $problems += Test-RealClientHealthy -Client $client
@@ -238,15 +277,57 @@ function Invoke-RealClientScenario {
     $joinLog = Get-LogSince -Offset $joinOffset
     if ($joinLog -match "$player lost connection: (?!Disconnected)(.*)") { $problems += "$id (real client): server log '$player lost connection: $($Matches[1].Trim())'." }
     $logins = @([regex]::Matches($joinLog, "$player\[[^\]]*\] logged in")).Count
-    if ($Scenario.SecondLogin -and $logins -lt 2) { $problems += "$id (real client): $logins placement(s) of $player, expected the failed one and the minimal profile." }
+    if ($Scenario.TwoPlacements -and $logins -lt 2) { $problems += "$id (real client): $logins placement(s) of $player, expected the failed one and the minimal profile." }
     $chat = @(Get-RealClientChat -Client $client)
     if (@($chat | Where-Object { $_.Contains($playerMessage) }).Count -eq 0) {
         $problems += "$id (real client): $player did not show the player message. Chat: [$($chat -join ' | ')]"
     }
     # The message was checked in the client's own chat above.
     $problems += Test-ScenarioIncidents -Scenario @{ Id = $id; Player = $player } -Before $before -BotOutputs $playerMessage -JoinLog $joinLog
-    $line = "$id real client ${player}: $logins placement(s), stayed $realClientStaySeconds s, chat [$($chat -join ' | ')], closed cleanly: $closed"
+    $line = "$id real client ${player}: $logins placement(s), stayed $realClientStaySeconds s, $fallDetail, chat [$($chat -join ' | ')], closed cleanly: $closed"
     return @{ Line = $line; Problems = $problems }
+}
+
+function Invoke-RealClientDisconnect {
+    # S11 with a real client, two joins. At the first, every placement fails, so the client never
+    # gets a login packet, only the game's "Invalid player data" disconnect (ARCHITECTURE.md,
+    # Cleanup after a failed placement). At the second no rescue is tried, and the disconnect lets
+    # out the packets the connection held. Each time the client must show the reason and log no
+    # packet error or crash. The 1.20.1 client shows the reason without logging it
+    # (ClientPacketListener#onDisconnect), so there the server's line is the proof.
+    param([hashtable]$Context)
+    $player = 'S11Client'
+    $problems = @()
+    $lines = @()
+    Invoke-PrepareJoin -Scenario @{ Id = 'S11'; Player = $player; Setup = @() } -Modes '' -RunSetup $false | Out-Null
+    Set-PlayerModes -Player $player -Modes 'throw-on-placement'
+    $logsReason = $band.compileTarget -ne '1.20.1'
+    foreach ($join in 1, 2) {
+        $joinOffset = Get-LatestLogLength
+        $client = Start-RealClient -Launcher $Context.Launcher -Root $Context.Root -Version $Context.Version -JavaExe $javaExe `
+            -Name $player -GameDir (Join-Path $Context.RunRoot $player) -Port $ServerPort
+        try {
+            if (-not (Wait-ForLog -Offset $joinOffset -Pattern "$player lost connection: Invalid player data" -Seconds 300)) {
+                $problems += "S11 (real client) join ${join}: $player was not disconnected with 'Invalid player data'."
+            } elseif ($logsReason -and -not (Wait-RealClientLog -Client $client -Pattern 'Invalid player data' -Seconds 20)) {
+                $problems += "S11 (real client) join ${join}: $player did not show the reason 'Invalid player data'."
+            } elseif (-not $logsReason) {
+                Start-Sleep -Seconds 5
+            }
+            $problems += @((Test-RealClientHealthy -Client $client) | Where-Object { $_ -notmatch 'Client disconnected with reason|Disconnecting from server|Lost connection' })
+        } finally {
+            $closed = Close-RealClient -Client $client
+        }
+        $joinLog = Get-LogSince -Offset $joinOffset
+        if ($joinLog -notmatch 'pdrtest: deliberate failure: placement of S11Client') { $problems += "S11 (real client) join ${join}: the join did not hit the test mod failure." }
+        if ($join -eq 2 -and $joinLog -notmatch 'no rescue is tried') { $problems += 'S11 (real client) join 2: the server log does not say that no rescue is tried.' }
+        $reason = 'not logged by this client'
+        if ($logsReason) {
+            $reason = "$(@((Get-RealClientLog -Client $client) -split "`r?`n" | Where-Object { $_ -match 'Invalid player data' }) | Select-Object -First 1)".Trim()
+        }
+        $lines += "join ${join}: client log '$reason', closed cleanly: $closed"
+    }
+    return @{ Line = "S11 real client ${player}: disconnected twice; $($lines -join '; ')"; Problems = $problems }
 }
 
 function Invoke-RealClientScenarios {
@@ -272,6 +353,13 @@ function Invoke-RealClientScenarios {
             } catch {
                 $failures += "$($scenario.Id) (real client) failed: $($_.Exception.Message)"
             }
+        }
+        try {
+            $result = Invoke-RealClientDisconnect -Context $Context
+            $summary += $result.Line
+            $failures += $result.Problems
+        } catch {
+            $failures += "S11 (real client) failed: $($_.Exception.Message)"
         }
         $chat = @(Get-RealClientChat -Client $operator)
         foreach ($player in $rescued) {

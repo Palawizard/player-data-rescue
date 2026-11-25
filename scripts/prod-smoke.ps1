@@ -11,7 +11,7 @@ param(
     [int]$ServerPort = 25566,
     [int]$RconPort = 25576,
     [int]$TimeoutMinutes = 10,
-    # After the scenarios, replay S2 and S15 with the real game client (real-client.ps1). Needs a
+    # After the scenarios, replay S2, S15 and S11 with the real game client (real-client.ps1). Needs a
     # desktop session and the portablemc launcher (-Launcher or PDR_PORTABLEMC, ADR-PDR-011).
     [switch]$RealClient,
     [string]$Launcher,
@@ -277,7 +277,7 @@ if ($RealClient) {
     $realClientContext = @{
         Launcher = Get-PortableMc -Launcher $Launcher
         Root     = Get-ClientRoot -ClientRoot $ClientRoot
-        Version  = Get-ClientVersion -Band $band -LoaderConfig $loaderConfig -Loader $Loader -Vanilla
+        Version  = Get-ClientVersion -Band $band
         RunRoot  = Join-Path $ProjectRoot "build/real-client/runs/$BandId-$Loader"
     }
     # Each client can take minutes to start the first time, while it downloads its version.

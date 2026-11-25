@@ -94,15 +94,18 @@ public final class RescueService {
      */
     public static boolean onPlacementFailure(GameJoin join, Exception failure) {
         try {
-            return placementFailure(join, failure);
+            return rescueAfterPlacementFailure(join, failure);
         } finally {
+            // The timed hooks of a failed join (the hold, and on 1.20.1 the read of each attempt)
+            // never reach the normal path report, so their time must not end up in the next join's.
+            Timing.take(join.id());
             // Restored entries of a join that failed without a rescue result failed too; when
             // the rescue ran, it has already decided each one.
             RestoreService.rescued(join, null, null);
         }
     }
 
-    private static boolean placementFailure(GameJoin join, Exception failure) {
+    private static boolean rescueAfterPlacementFailure(GameJoin join, Exception failure) {
         if (bridge == null || !config.enabled()) {
             return false;
         }

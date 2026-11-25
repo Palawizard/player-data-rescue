@@ -11,7 +11,7 @@ param(
 # no final period, and no co-author trailers or generated-by footers.
 
 $ErrorActionPreference = 'Stop'
-$types = 'feat|fix|perf|refactor|docs|test|build|ci|chore|style'
+$types = 'feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert'
 $subjectPattern = "^($types)(\([a-z0-9][a-z0-9.\-]*\))?!?: \S.*$"
 
 function Test-Subject {

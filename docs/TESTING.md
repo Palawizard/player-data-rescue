@@ -25,7 +25,7 @@ The smoke test installs the loader's real dedicated server, drops the packaged J
 
 The test mod (mod id `pdrtest`) lives in `testmod/`: `common/` for every band, `common-<minecraft>/` for each Minecraft version, and `<minecraft>-<loader>/` for each loader. Each band compiles it as its own source set and writes `build/testmod/pdrtest-<minecraft>-<loader>.jar`, remapped like the release JAR where the loader needs it. It never goes into `build/libs`, and `check-release-artifacts.ps1` fails if a release JAR holds any of its files. Format it with `core/gradlew -p testmod spotlessApply` (CI runs `spotlessCheck`).
 
-It reads `pdrtest.properties` from the server folder on every call, one line per player name, for example `S2Bot=attach,attachment-throws`:
+It reads `pdrtest.properties` from its working folder (the server folder, or the game folder of a real client) on every call, one line per player name, for example `S2Bot=attach,attachment-throws`:
 
 | Mode | Failure |
 |---|---|
@@ -46,11 +46,11 @@ The attachment is a Forge capability under `ForgeCaps`, a NeoForge data attachme
 
 `testmod/join-bot/JoinBot.java` joins a real player without a game client (ADR-PDR-006). It needs no build: `java JoinBot.java --port 25566 --protocol 777 --name Bot --stay-seconds 20`. Protocols: 763 (1.20.1), 767 (1.21.1), 777 (26.3). It prints `[join-bot]` lines, including each system message it receives as `[join-bot] chat: <component>` (JSON on 1.20.1, network NBT on 1.21.1 and 26.3), and exits with 0 when it joined and stayed, 3 when the server disconnected it (the reason is printed), and 4 on a network error or timeout. It needs `online-mode=false`, and `white-list=false` on 26.3, whose server enables the whitelist by default.
 
-After each teleport on 1.20.1 and 1.21.1, and then every second on every version, the client reports its position (`ServerboundMovePlayerPacket.PosRot`: ids 21 on 1.20.1, 27 on 1.21.1 and 31 on 26.3), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket` (id 13). On 1.20.1 and 1.21.1 the server moves its chunk tracking only when the client reports a position, not when it accepts a teleport, so without the report a player teleported with RCON stays tracked at its join position. On 26.3 the server accepts one position per client tick and resets that limit on the tick end packet; a second position in the same tick disconnects the client with "Invalid move player packet received". On 26.3 the teleport confirmation carries the position, and the vanilla client sends no position after it (`ClientPacketListener#handleMovePlayer`); the join client does the same, otherwise the burst of teleports of a T3 retry ends in "moved too quickly" and a disconnect. The ids come from `ConnectionProtocol` (1.20.1) and from the `--reports` packet list (1.21.1, 26.3), the layout (three doubles, two floats, one flag byte) from each version's `ServerboundMovePlayerPacket`.
+After each teleport on 1.20.1 and 1.21.1, and then every second on every version, the client reports its position (`ServerboundMovePlayerPacket.PosRot`: ids 21 on 1.20.1, 27 on 1.21.1 and 31 on 26.3), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket` (id 13). On 1.20.1 and 1.21.1 the server moves its chunk tracking only when the client reports a position, not when it accepts a teleport, so without the report a player teleported with RCON stays tracked at its join position. On 26.3 the server accepts one position per client tick and resets that limit on the tick end packet; a second position in the same tick disconnects the client with "Invalid move player packet received". On 26.3 the teleport confirmation carries the position, and the vanilla client sends no position after it (`ClientPacketListener#handleMovePlayer`); the join client does the same. The ids come from `ConnectionProtocol` (1.20.1) and from the `--reports` packet list (1.21.1, 26.3), the layout (three doubles, two floats, one flag byte) from each version's `ServerboundMovePlayerPacket`.
 
 ## Failure scenarios
 
-Unless `-SkipScenarios` is given, `prod-smoke.ps1` also installs the test mod and runs `scripts/smoke-scenarios.ps1` before stopping the server, so CI runs them for every band.After the scenarios, the script checks the join client itself: `TpBot` joins, RCON puts it in creative mode (so it can stand in the air without being kicked for flying) and teleports it 1000 blocks east of where it joined, at y 100. That far from the join position, neither the spawn chunks nor the chunks around the join position cover the destination, whatever the world's random spawn. `execute at TpBot if loaded ~ ~-1 ~` must then pass at every check, every 2 seconds from 8 to 24 seconds after the teleport, and a 16 by 16 `fill` of glass under the player must answer "Successfully filled" at the end, while the client stays connected. The ticket of the teleport itself keeps the destination loaded for a few server ticks, which take longer on a server that just started, so the check runs after the scenarios and lasts well past that ticket. Without the position report, the destination unloads on 1.20.1 and 1.21.1.
+Unless `-SkipScenarios` is given, `prod-smoke.ps1` also installs the test mod and runs `scripts/smoke-scenarios.ps1` before stopping the server, so CI runs them for every band. After the scenarios, the script checks the join client itself: `TpBot` joins, RCON puts it in creative mode, so that it can stand in the air at the destination (the smoke config also sets `allow-flight=true`, since the join client never falls) and teleports it 1000 blocks east of where it joined, at y 100. That far from the join position, neither the spawn chunks nor the chunks around the join position cover the destination, whatever the world's random spawn. `execute at TpBot if loaded ~ ~-1 ~` must then pass at every check, every 2 seconds from 8 to 24 seconds after the teleport, and a 16 by 16 `fill` of glass under the player must answer "Successfully filled" at the end, while the client stays connected. The ticket of the teleport itself keeps the destination loaded for a few server ticks, which take longer on a server that just started, so the check runs after the scenarios and lasts well past that ticket. Without the position report, the destination unloads on 1.20.1 and 1.21.1.
 
 Each scenario uses its own player. One or two first joins save real data and let the test mod break it, and the script checks the test mod's log line that proves it (for example `saved attachment pdrtest:broken of S2Bot as int`). The player files at that point are copied to `build/prod-smoke/fixtures/<band>-<loader>/<scenario>/` (see Fixtures below). Each later join must log the failure the scenario causes (`pdrtest: deliberate failure: ...`, which NeoForge also logs when it skips the attachment), and records the outcome: `invalid` (the client got the `multiplayer.disconnect.invalid_player_data` disconnect, and the log has `Couldn't place player in world`) or `joined`. The script then checks the incident folders the scenario wrote under `smokeworld/playerdatarescue/<uuid>/`: their number, `report.json` (trigger, outcome, the one entry set aside and its payload file, the suspect), the files in `original/`, the wording of `report.txt`, and the message the player's client received. A rescued join must not log `Couldn't place player in world`.
 
@@ -66,8 +66,9 @@ Observed on 2026-11-16 on every Tier A band (Forge and Fabric 1.20.1; Forge, Fab
 | S6 | Truncated `.dat` and `.dat_old` | joined as a new player; one incident, T2, `unreadable_file`, both files in `original/` | same | same |
 | S11 | Placement throws for any data, saved data present | invalid at both joins; one incident at the first: T3, the half-placed player removed, the minimal profile placed and failing on the test mod, `not_data_related`, suspect pdrtest, original file back; the second join tries no rescue | same | same |
 | S11 (new player) | Placement throws, no saved data | invalid; one incident, T3, `not_data_related` with no original files, suspect pdrtest | same | same |
-| S12 | Valid data | joined, no incident; normal path 2.9 to 9.1 µs (Normal path cost below) | same | same |
+| S12 | Valid data | joined, no incident; normal path under 100 µs on 2026-11-24, with the packet hold (Normal path cost below) | same | same |
 | S13 | Attachment saved in a form it cannot read back | joined at both joins; one incident per join (recurring issues are M3) | same | joined, attachment lost, no incident (T4) |
+| S15 (2026-11-24) | Placement fails only when the data holds the test attachment | joined with one login packet; one incident, T3, `minimal_profile`, `section.ForgeCaps` set aside with the other sections, suspect pdrtest | joined; same with `key.pdrtest:broken` | joined; same with `section.neoforge:attachments` |
 
 "Lost" means the game drops the unit while loading, and the next save writes the player without it. Those units are trigger T4 (SPEC.md section 2), a later milestone. The details per band are in [ARCHITECTURE.md](ARCHITECTURE.md), Hook points.
 
@@ -77,15 +78,17 @@ After the scenarios, the server is stopped and started again without the release
 
 ## Normal path cost (S12)
 
-With `-Dplayerdatarescue.timing=true`, which `prod-smoke.ps1` passes to the server when it runs the scenarios, the mod adds up the time spent in its hooks during a join, measured with `System.nanoTime()` around the body of each hook, and logs it when the login handler returns: `normal path for S12Bot: <µs> us in <n> hook call(s)`. Without the property, the timing costs one static field read per hook; the hooks themselves still run. S12 fails above 1000 µs. The hooks on a normal join are the login handler's return hook on every band, and on 1.20.1 also the read hook of `PlayerDataStorage#load`; the placement guard and the unreadable file hook only run on a failure.
+With `-Dplayerdatarescue.timing=true`, which `prod-smoke.ps1` passes to the server when it runs the scenarios, the mod adds up the time spent in its hooks during a join, measured with `System.nanoTime()` around the body of each hook, and logs it when the login handler returns: `normal path for S12Bot: <µs> us in <n> hook call(s)`. Without the property, the timing costs one static field read per hook; the hooks themselves still run. S12 fails above 1000 µs. The hooks on a normal join are the login handler's return hook on every band, and on 1.20.1 also the read hook of `PlayerDataStorage#load`; the placement guard and the unreadable file hook only run on a failure. The hold and the two releases of the placement's packets are timed too (three more hook calls). A release sends the packets the game queued during the placement, so its time includes the game's own sends (chunks and entities in view, more with a larger view distance): the measure is an upper bound of the mod's cost, which is a list entry per held packet and a second pass through `Connection#send`. Each packet the server sends also goes through the hold check of `Connection#send`, which is left out of the measure: when nothing is held it is a callback object and one volatile field read, and timing it would cost more than it does.
 
-Measured on 2026-11-16 in the production-JAR smoke test (`./scripts/build-all-version-bands.ps1`, Linux container, 4 cores), second join of `S12Bot`, whose data was saved by its first join:
+Measured on 2026-11-24 in the production-JAR smoke test (`./scripts/prod-smoke.ps1 -SkipBuild -RealClient`, one band at a time, Linux laptop), second join of `S12Bot`, whose data was saved by its first join:
 
 | Band | Forge | Fabric | NeoForge |
 |---|---|---|---|
-| 1.20.1 (2 hook calls) | 9.1 µs | 8.6 µs | |
-| 1.21.1 (1 hook call) | 2.9 µs | 7.1 µs | 4.7 µs |
-| 26.3 (1 hook call) | 7.0 µs | 4.7 µs | 6.1 µs |
+| 1.20.1 (5 hook calls) | 54.9 µs | 77.6 µs | |
+| 1.21.1 (4 hook calls) | 15.6 µs | 28.4 µs | 82.1 µs |
+| 26.3 (4 hook calls) | 18.5 µs | 24.7 µs | 35.0 µs |
+
+Before the packet hold (2026-11-16, Linux container, 4 cores, 2 hook calls on 1.20.1 and 1 elsewhere), the same join took 2.9 to 9.1 µs. The difference is mostly the release, which sends the game's own packets of the placement.
 
 The measure covers the hook bodies only, not the time the game spends loading the player, which the mod does not change on a normal join. These hooks run on a cold JIT at that point, so later joins are likely cheaper.
 
@@ -95,7 +98,7 @@ The core tests (`core/src/test`) read real player files and `level.dat` files fr
 
 ## Real client checks
 
-Some results depend on the real game client, which the join client only imitates: whether the client takes a second login packet on one connection (the T3 retry, ADR-PDR-012), how it shows the player message and the operator notice, and the singleplayer host of S8. These checks start the real client with portablemc 5.0.6 and an offline account (ADR-PDR-011). The client opens a game window, so they run on a desktop session and not in CI; each script closes the windows it opened.
+Some results depend on the real game client, which the join client only imitates: whether the client survives the T3 retry, which places the player a second time on one connection (ADR-PDR-012), and how it shows the player message and the operator notice. These checks start the real client with portablemc 5.0.6 and an offline account (ADR-PDR-011). The client opens a game window, so they run on a desktop session and not in CI; the script closes the windows it opened.
 
 Setup, once:
 
@@ -103,34 +106,38 @@ Setup, once:
 2. Set `PDR_PORTABLEMC` to the `portablemc` binary (or pass `-Launcher`), and optionally `PDR_CLIENT_ROOT` to a folder for the game versions, libraries and assets (about 1.5 GB for the three vanilla clients; the default is `build/real-client/.minecraft`).
 3. Build the bands: `./scripts/build-all-version-bands.ps1 -SkipSmoke`.
 
-Dedicated server, vanilla client of the band: `./scripts/prod-smoke.ps1 -BandId <band> -Loader <loader> -SkipBuild -RealClient`. After the join client scenarios, a real client joins as an operator (`OpClient`) and stays, then real clients replay two scenarios:
+Dedicated server, vanilla client of the band: `./scripts/prod-smoke.ps1 -BandId <band> -Loader <loader> -SkipBuild -RealClient`. After the join client scenarios, a real client joins as an operator (`OpClient`) and stays, then real clients replay three scenarios:
 
 - S2 (`S2Client`, Forge and Fabric; on NeoForge the attachment is skipped by the game, T4): the client must show the player message.
-- S15 (`S15Client`): the failed placement sends a first login packet and the minimal profile a second one on the same connection. The client must stay connected for 30 seconds after the rescue, show a chat message sent after that time, be in the player list, show the player message, and log no disconnect, packet error or crash.
+- S15 (`S15Client`): the placement fails, and the minimal profile is placed on the same connection. The client must stay connected for 30 seconds after the rescue, show a chat message sent after that time, fall back when RCON lifts it 3 blocks (the server sees its height drop within 5 seconds), be in the player list, show the player message, and log no disconnect, packet error or crash.
+- S11 (`S11Client`), two joins: at the first every placement fails, so the client never gets a login packet, only the game's disconnect; at the second no rescue is tried, and the disconnect lets out the packets the connection held. Each time the client must show "Invalid player data" and log no packet error or crash. The 1.20.1 client shows the reason without logging it, so on 1.20.1 the server's `lost connection: Invalid player data` line is the proof (the screen was checked by eye on Forge 1.20.1 on 2026-11-24).
 
-`OpClient` must show the operator notice of each rescue. Both clients are closed through their window, as a player closes them.
+S2 and S15 check the fall. A client that got a second login packet passed every other check but this one: its player stayed in the air, and shook on screen (ARCHITECTURE.md, Cleanup after a failed placement).
 
-## Manual check: S8, singleplayer host
+`OpClient` must show the operator notice of each rescue. Every client is closed through its window, as a player closes it (on Windows and Hyprland; elsewhere the script sends the game `SIGTERM`).
 
-The integrated server only exists with a real game client, so S8 is checked by hand. The core part is covered by `HostDataTest` on a real `level.dat` whose `Data.Player` holds the test attachment.
+Observed on 2026-11-24 with portablemc 5.0.6, on every Tier A band (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3), on the code of this change: S15 placed the player twice on the server, its join client got one login packet, and the vanilla client stayed 30 seconds, fell 3 blocks back after the lift, showed the chat marker and the player message, and logged no error (the vanilla client's own count of login packets is not read: the fall is its proof); S11 disconnected the vanilla client twice with "Invalid player data", shown in its log on 1.21.1 and 26.3, and no packet error; S2 passed on Forge and Fabric; `OpClient` showed every operator notice; S10 passed after the run. Before the packet hold, on Fabric 1.21.1, S15 passed every other check while a lift by RCON showed its player stuck in the air.
 
-Setup, once per band (Fabric 1.20.1 and Fabric 1.21.1; Forge 1.20.1 and Forge 1.21.1 work the same way with their test mod):
+## S8 with the real client: singleplayer host
 
-1. Build the band: `./scripts/build-all-version-bands.ps1 -SkipSmoke -OnlyBands 1.20-1.20.1 -OnlyLoaders fabric` (or `1.21-1.21.4`).
-2. Install the matching client profile in the official launcher: Minecraft 1.20.1 (or 1.21.1) with Fabric Loader 0.20.1, in a fresh game directory.
-3. Put two JARs in its `mods` folder: `versions/1.20.1-fabric/build/libs/player-data-rescue-1.20.1-fabric-0.1.0.jar` and `versions/1.20.1-fabric/build/testmod/pdrtest-1.20.1-fabric.jar`.
+The integrated server only exists with a real game client. `HostDataTest` covers the core part on a real `level.dat` whose `Data.Player` holds the test attachment; this check runs the whole path on one band, with the setup of Real client checks above:
 
-Steps:
+`./scripts/real-client-singleplayer.ps1 -BandId <band> -Loader <loader>`
 
-1. Start the game and create a singleplayer world named `S8` (creative, flat). Note your player name (shown in the multiplayer screen or the launcher).
-2. Leave the world. The test mod has saved its attachment `pdrtest:broken` in your host data (`saves/S8/level.dat`, `Data.Player`).
-3. Close the game. In the game directory, create `pdrtest.properties` with one line: `<your name>=attachment-throws`.
-4. Start the game and open the world `S8`.
-5. Expected: the world opens and you are in it, at the position where you left, with your inventory. The chat shows "Some of your saved data could not be loaded and was set aside. An admin can restore it."
-6. Close the game. Check `saves/S8/playerdatarescue/<your uuid>/<date>/`: `original/` holds `level.dat` and `level.dat_old`; `report.txt` lists "Mod data under the key pdrtest:broken (pdrtest)" with pdrtest as most likely, and `quarantine/key.pdrtest_broken.nbt` exists. On Forge the attachment is a capability: the line is "Attachment pdrtest:broken (pdrtest)" and the file `quarantine/attachment.pdrtest_broken.nbt`.
-7. Remove `pdrtest.properties`, open the world again: no new incident folder is created.
+1. The band's dedicated server makes an empty world (`prod-smoke.ps1 -SkipScenarios`), copied into the client's game folder as the singleplayer world `S8`.
+2. The client opens it with the release JAR and the test mod: the host player is created, and the test mod saves its attachment `pdrtest:broken` in the host data when the window closes.
+3. Control: a copy of that world, opened with the test mod only while the attachment's reader throws (`attachment-throws`), must fail as the game does without the mod (`Couldn't place player in world`).
+4. With both JARs and the same mode: the host joins, the chat shows the player message, and one incident is written: trigger T1, outcome rescued, only the attachment set aside with its payload file, pdrtest among the suspects, and the host data in `original/` (`level.dat` and `level.dat_old` on 1.20.1 and 1.21.1, the host's player file and its `.dat_old` on 26.3).
+5. Opened again with a reader that works: the host joins and no new incident is written.
 
-Without the mod (control): the same steps with only the test mod in `mods` end at step 4 with "Failed to load" or a return to the title screen, and the log shows `Couldn't place player in world`.
+No opening may leave a crash report, also one written while the game closes. Each window is closed as a player closes it, so the world is saved: the script does it on Windows and on Hyprland; elsewhere it stops the game with `SIGTERM`, which was not tried for S8. On NeoForge the game skips the unreadable attachment and logs it (T4): the control and the rescue opening both join, and no incident is expected.
+
+Two Forge problems made the client fail this check before the workarounds below:
+
+- A Forge mod file without `pack.mcmeta` has no valid pack: the dedicated servers of the three Forge bands log "Missing metadata in pack", and Forge 1.20.1 also records a loading warning, so its client stops on a "failed to load a valid ResourcePackInfo" screen at each start and a singleplayer world never opens by itself. The Forge JARs and test mods now carry one (`pack_format` as in each Forge MDK), and `check-release-artifacts.ps1` requires it.
+- Forge 1.21.1 (52.1.20) starts its game event bus only after the client has opened a quick play world (`ClientModLoader.completeModLoading` runs after `Minecraft#onResourceLoadFinished`). That world's `AddReloadListenerEvent` is lost, the loot modifier manager is never created, and the first loot roll (a leaf decaying, water breaking a block) crashes the integrated server with "Can not retrieve LootModifierManager until resources have loaded once". It happened in 9 of 12 openings, with or without any mod. A world opened from the title screen and a dedicated server are not affected. Forge 47 also holds the bus until `completeModLoading`, but calls it before it prepares the quick play world. The Forge 1.21.1 test mod starts the bus at client setup, during mod loading: 8 openings in a row then had no crash. The Forge 26.3 test mod has no such workaround, and its S8 openings had no crash.
+
+Observed on 2026-11-25 with portablemc 5.0.6, on every Tier A band, on the code of this change: S8 passed on Forge and Fabric 1.20.1, Forge, Fabric and NeoForge 1.21.1, and Forge, Fabric and NeoForge 26.3. The control failed with `Couldn't place player in world` on Forge and Fabric, and logged `Failed to deserialize data attachment` and joined on NeoForge.
 
 ## Scenarios
 
