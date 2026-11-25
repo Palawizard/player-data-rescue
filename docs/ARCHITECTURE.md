@@ -114,7 +114,7 @@ Checked on 2026-11-24 in the same sources, for every Tier A band.
 
 | Band | Commands | Before the player's data is read |
 |---|---|---|
-| 1.20.1 | `@Inject` at the `TAIL` of `Commands#<init>(Commands$CommandSelection, CommandBuildContext)`, `@Shadow` of `dispatcher` | `@Inject` before `PlayerList#getPlayerForLogin(GameProfile)` in `ServerLoginPacketListenerImpl#handleAcceptedLogin()V` |
+| 1.20.1 | `@Inject` at the `TAIL` of `Commands#<init>(Commands$CommandSelection, CommandBuildContext)`, `@Shadow` of `dispatcher` | `@Inject` at the `HEAD` of `ServerLoginPacketListenerImpl#placeNewPlayer(ServerPlayer)V`, after `PlayerList#getPlayerForLogin` has disconnected and saved a player still online under the same profile; its `RETURN` ends the restore, also for a placement delayed to `tick` (checked with `javap` on the 1.20.1 Mojang-named JAR on 2026-11-25) |
 | 1.21.1 | same constructor | `@Inject` before `PlayerList#getPlayerForLogin(GameProfile, ClientInformation)` in `ServerConfigurationPacketListenerImpl#handleConfigurationFinished`, after the method has moved to the server thread (NeoForge's copy of the guard mixin has the same hook) |
 | 26.3 | same constructor | `@Inject` at the `HEAD` of `PrepareSpawnTask#start(Ljava/util/function/Consumer;)V`, which reads the player file first, during configuration (`@Shadow` of `server` and `nameAndId`) |
 
@@ -122,7 +122,7 @@ Permission checks and clickable text differ by version and live in each `common-
 
 ## Restore
 
-The core holds the restore (`core/restore`): `Restorer` queues entries and prepares a join, `RestoreMerge` puts entries into a copy of the player's data, and `RestoreQueue` is the queue file. The bands only call it from the hook above, write the merged data where the game reads it (`DataSource#write`, as an attempt does), and set the status of each entry when the login handler returns or the rescue runs (`RestoreService`). The backup incident is written before the data changes, through the same store as a rescue.
+The core holds the restore (`core/restore`): `Restorer` runs the commands (queue, dismiss), `RestoreJoin` the join side (settle a past record, merge the queue, decide each entry from where the join ended), `RestoreMerge` puts entries into a copy of the player's data and says which tags each entry put there, and `RestoreQueue` and `RestorePending` are the queue file and the record of entries on their way in. The bands only call it from the hooks above (`RestoreService`): they hash and read the player's data, write the merged data where the game reads it (`DataSource#write`, as an attempt does), put the data back with the same `DataSource` when the player does not get in, and drop the stacks that found no slot. The backup incident and the record are written before the data changes. Every rule that keeps an entry restorable in one place only is tested in the core (`RestoreJoinTest`, `RestorerTest`).
 
 ## Rescue strategy
 

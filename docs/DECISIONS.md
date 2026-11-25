@@ -242,3 +242,11 @@ Options considered:
 - Refuse an attachment whose key the player already has, as the first SPEC said. Forge writes every capability at each save and a Fabric mod writes its key at each save, so while the mod is installed the key is always there and such a restore would always fail. The value is replaced instead and kept aside.
 
 Why: the game's read already handles every kind of entry, with the data fixers and the loader events around it (ADR-PDR-010), so a restored entry is decoded exactly as it would have been. The backup incident keeps the data from before the restore, and the replaced values stay restorable. Since a restored entry is never queued again, restoring twice cannot duplicate items.
+
+Amended on 2026-11-25, after the review of the restore (decided by the maintainer for the set-aside case):
+
+- An entry the join's rescue sets aside again is now in the new incident, so it gets the new status `set_aside_again` and is never queued again from its first incident. It was `restore_failed` and could be queued again, which let a restore of both incidents bring the same items back twice. `restore_failed` stays for entries that never reached the data, or whose data was put back.
+- When the player does not get in, the data is put back as it was before the restore. The rescue's own put-back writes the data it read, which is the merged data, so the entries would have stayed in the file while being marked as failed.
+- The entries on their way in are recorded on disk (`restore-pending.dat`) before the merged data is written, with a hash of the player file. A join that never reports its result (a crash, or a client that leaves during configuration on 26.3) is settled at the next join from that hash, instead of from memory.
+- On 1.20.1 the hook moves from before `PlayerList#getPlayerForLogin` to the head of `ServerLoginPacketListenerImpl#placeNewPlayer(ServerPlayer)`. `getPlayerForLogin` disconnects and saves a player who is still online under the same profile, and that save replaced the merged data.
+- Each entry is followed by its incident and entry id, and the rescue's verdict is read from the tags the entry put into the data, not from the entry id: a stack restored to another slot, or two incidents with the same entry id, are decided apart.

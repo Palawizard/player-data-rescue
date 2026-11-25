@@ -106,6 +106,8 @@ At most three suspects, without duplicates. Reports say "most likely", never "ca
       quarantine/<entry-id>.nbt binary payload of each entry
       report.txt
       report.json
+    restore-queue.json          entries queued by /pdrescue restore (§7.1)
+    restore-pending.dat         entries on their way into the data at a join (§7.1)
   recurring/
     <key>.json                  recurring issues (§4.4)
 ```
@@ -114,7 +116,8 @@ At most three suspects, without duplicates. Reports say "most likely", never "ca
 - `report.txt` starts with one sentence saying what happened. It then gives the player name and UUID, the date, the Minecraft, loader and mod versions, and the trigger. Next comes the list of kept and set-aside parts in plain words (for example "Slot 17: 12 brass ingots (create)"), followed by the suspects and the next step (for example "reinstall create, then run `/pdrescue restore <player> <incident>`"). The raw errors are in an appendix.
 - A *diagnosis report* (not data-related failures, §2) has the same layout, but says that the saved data is not the cause and that nothing was changed.
 - `report.json` holds the same content with a schema version.
-- Retention keeps the latest `maxIncidentsPerPlayer` incidents (default 20). Incidents that still have quarantined entries are never pruned automatically.
+- Retention keeps the latest `maxIncidentsPerPlayer` incidents (default 20). Incidents that still have an entry that can be restored (`quarantined` or `restore_failed`) are never pruned automatically.
+- An entry's status is `quarantined`, `restored`, `dismissed`, `restore_failed` or `set_aside_again` (§7.1).
 
 ## 7. Commands
 
@@ -142,8 +145,14 @@ Decided on 2026-11-24 (ADR-PDR-013): a restore always goes through the game's ow
 - Attachments, mod keys, effects and the recipe book replace what P has under the same key. The value they replace is kept as a quarantine entry of the backup incident, so it can be restored in turn. Entries are never merged.
 - Vehicles cannot be restored in v1. The payload is kept for manual recovery.
 - An entry saved with another data version than P's current data is refused, since the game would read it with the wrong data fixes.
-- After the join, each entry put back becomes `restored`, and restoring it again does nothing. This is what prevents item duplication. Queuing the same entry twice before the join restores it once.
-- An entry that cannot go back, or that the join sets aside again, becomes `restore_failed` with the reason, and keeps its payload. It can be queued again.
+- The entries on their way into the data are recorded in `<world>/playerdatarescue/<uuid>/restore-pending.dat` before the data changes, with a hash of P's file as it was. Until the join's result settles them, they are neither queued nor dismissed again.
+- Where the join ends decides each entry. An entry's payload is restorable from one place at a time, so no restore brings the same items back twice.
+  - P is in the world without a rescue: each entry becomes `restored`, and restoring it again does nothing. Queuing the same entry twice before the join restores it once.
+  - P is in the world after a rescue of that join: an entry the rescue set aside again, or every entry when P did not join with the salvaged data, becomes `set_aside_again`, with the new incident in its reason. It is restored from that incident, and never queued again from this one. The other entries become `restored`.
+  - P is not in the world (the failure is not data-related, the rescue is off or did not run): P's data is put back as it was before the restore, and each entry becomes `restore_failed`. It can be queued again.
+  - The join never reports its result (the server stops, or P leaves between the read and the placement): the next join of P settles it. If P's file is still the one from before the restore, the entries are queued again; otherwise the data holds them, and they become `restored`.
+- Stacks that drop at P's feet are not part of the data, so they drop whenever P gets in, even after a rescue or at a later join. A stack the game cannot read is logged with its data and not dropped.
+- An entry that cannot go back (missing payload, another data version, a vehicle) becomes `restore_failed` with the reason and keeps its payload; vehicles are refused by the command already. When no entry of a join goes into the data, no backup incident is made.
 
 ## 8. Configuration (`config/playerdatarescue.json`)
 

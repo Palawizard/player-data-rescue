@@ -34,7 +34,7 @@ Rescues happen automatically. Each rescue writes a folder under `<world>/playerd
 | --- | --- |
 | `/pdrescue list [player]` | List rescues |
 | `/pdrescue show <player> <incident>` | Show what was set aside and why |
-| `/pdrescue restore <player> <incident> [entry\|all]` | Put set-aside parts back |
+| `/pdrescue restore <player> <incident> [entry\|all]` | Put set-aside parts back at the player's next join |
 | `/pdrescue dismiss <player> <incident> [entry\|all]` | Mark parts as handled |
 | `/pdrescue export <player> <incident>` | Print the folder path for a bug report |
 
