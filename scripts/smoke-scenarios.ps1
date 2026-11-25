@@ -411,13 +411,14 @@ function Invoke-RestoreJoin {
         if (-not (Wait-ForLog -Offset $offset -Pattern "$Player\[[^\]]*\] logged in")) { throw "S16: $Player never logged in." }
         Start-Sleep -Seconds 2
         $bricks = Get-BrickCount -Player $Player
+        $slot = (Invoke-RconCommand -Command "data get entity $Player Inventory[{Slot:17b}]").Trim()
     } finally {
         $output = Wait-JoinBot -Bot $bot
     }
     if ($output -notmatch 'left after staying') { throw "S16: $Player could not stay: $output" }
     Wait-ForLog -Offset $offset -Pattern "$Player left the game" | Out-Null
     Start-Sleep -Seconds 2
-    return @{ Bricks = $bricks; Log = (Get-LogSince -Offset $offset); Output = $output }
+    return @{ Bricks = $bricks; Slot = $slot; Log = (Get-LogSince -Offset $offset); Output = $output }
 }
 
 function Invoke-RestoreCheck {
@@ -442,6 +443,7 @@ function Invoke-RestoreCheck {
     if ($first -notmatch 'will be restored at their next join') { throw "S16: the first restore answered: $first" }
     $afterFirst = Invoke-RestoreJoin -Player $player
     if ($afterFirst.Bricks -ne 12) { throw "S16: $($afterFirst.Bricks) brick(s) after the restore, expected 12." }
+    if ($afterFirst.Slot -notmatch 'minecraft:brick') { throw "S16: slot 17 does not hold the bricks after the restore: $($afterFirst.Slot)" }
     if ($afterFirst.Output -notmatch 'set-aside part of your saved data was restored') { throw 'S16: the player was not told about the restore.' }
 
     $second = Invoke-RconCommand -Command "pdrescue restore $player $incident section.Inventory"
@@ -456,7 +458,7 @@ function Invoke-RestoreCheck {
     $backups = @($all | Where-Object { (Get-Content -LiteralPath (Join-Path $_.FullName 'report.json') -Raw | ConvertFrom-Json).trigger -eq 'RESTORE' })
     if ($all.Count -ne 2 -or $backups.Count -ne 1) { throw "S16: $($all.Count) incident(s) with $($backups.Count) restore backup(s), expected the rescue and one backup." }
     if (-not (Test-Path -LiteralPath (Join-Path $backups[0].FullName 'original'))) { throw 'S16: the restore backup has no original/ folder.' }
-    return "S16 ${player}: restore queued offline, 12 bricks after the next join, second restore refused ('Already restored'), still 12 bricks; entry restored; one backup incident"
+    return "S16 ${player}: restore queued offline, 12 bricks back in slot 17 after the next join, second restore refused ('Already restored'), still 12 bricks; entry restored; one backup incident"
 }
 
 function Start-Operator {
