@@ -520,7 +520,7 @@ function Invoke-RemovedModCheck {
         if ($output -match 'left after staying' -or (Get-LogSince -Offset $attemptOffset) -notmatch 'Server is still starting') { break }
         Start-Sleep -Seconds 1
     }
-    if ($output -notmatch 'left after staying') { throw "S10: S12Bot could not join without the mod: $output" }
+    if ($output -notmatch 'left after staying') { throw "S10: S12Bot could not join without the mod after $attempt attempt(s): $output" }
     if ((Get-LogSince -Offset $offset) -match '\[playerdatarescue\]') { throw 'S10: the mod logged a line although its JAR is removed.' }
     if ((Get-IncidentSnapshot) -ne $incidentSnapshot) { throw 'S10: the playerdatarescue folder changed while the mod was removed.' }
     Write-Host "  S10: the world loaded without the mod, S12Bot joined, and the $(@($incidentSnapshot -split "`n").Count) incident file(s) are unchanged"
