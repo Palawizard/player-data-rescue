@@ -307,6 +307,45 @@ class RecurringIssuesTest {
     }
 
     @Test
+    void keysSetAsideTogetherWithOtherModsByOneFailureDoNotCount() throws Exception {
+        Unit broken = PlayerData.of(Fixtures.read("1.20.1-forge/S2Bot.dat")).units().stream()
+                .filter(u -> u.id().equals(KEY))
+                .findFirst()
+                .orElseThrow();
+        Unit other = PlayerData.of(Fixtures.read("1.20.1-fabric/S1Bot.dat")).units().stream()
+                .filter(u -> u.namespace().isPresent() && !u.namespace().equals(broken.namespace()))
+                .findFirst()
+                .orElseThrow();
+        Throwable bulk = new IllegalStateException("no suspect matched");
+
+        RescueResult together = new RescueResult(
+                Trigger.T1,
+                Outcome.RESCUED,
+                List.of(
+                        new RescueResult.SetAside(broken, bulk, List.of()),
+                        new RescueResult.SetAside(other, bulk, List.of())),
+                List.of(),
+                List.of(),
+                bulk,
+                2);
+        RescueResult alone = new RescueResult(
+                Trigger.T1,
+                Outcome.RESCUED,
+                List.of(new RescueResult.SetAside(broken, bulk, List.of())),
+                List.of(),
+                List.of(),
+                bulk,
+                2);
+
+        assertTrue(RecurringIssues.failures(together).orElseThrow().isEmpty());
+        assertEquals(
+                List.of(KEY),
+                RecurringIssues.failures(alone).orElseThrow().stream()
+                        .map(RecurringIssues.Failure::key)
+                        .toList());
+    }
+
+    @Test
     void theKeysOfADataFileAreNamedAsTheRescueNamesItsUnits() throws Exception {
         assertTrue(
                 RecurringIssues.keys(Fixtures.read("1.20.1-forge/S12Bot.dat")).contains("attachment.pdrtest:broken"));

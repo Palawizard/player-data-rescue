@@ -26,7 +26,9 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -93,14 +95,23 @@ public final class RecurringIssues {
      * not count at all. Only a rescue that ends with the salvaged data counts, and only its mod data
      * units: an attachment or an unknown top-level key, which a mod writes again at every save. A
      * slot or an effect is gone from the data once set aside, and a minimal profile sets whole
-     * sections aside, not one key.
+     * sections aside, not one key. A unit counts only when the rescue singled it out: when one
+     * failed load made it set aside the units of several namespaces at once, because no suspect
+     * matched, it cannot tell which key broke, so none of them counts.
      */
     public static Optional<List<Failure>> failures(RescueResult result) {
         if (result.outcome() != Outcome.RESCUED) {
             return Optional.empty();
         }
+        Map<Throwable, Set<Optional<String>>> namespaces = new IdentityHashMap<>();
+        for (RescueResult.SetAside aside : result.aside()) {
+            namespaces
+                    .computeIfAbsent(aside.failure(), f -> new HashSet<>())
+                    .add(aside.unit().namespace());
+        }
         return Optional.of(result.aside().stream()
                 .filter(a -> modData(a.unit()))
+                .filter(a -> namespaces.get(a.failure()).size() == 1)
                 .map(a -> new Failure(
                         a.unit().id(),
                         a.unit().payload(),
