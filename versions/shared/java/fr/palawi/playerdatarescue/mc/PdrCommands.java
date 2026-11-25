@@ -1,5 +1,6 @@
 package fr.palawi.playerdatarescue.mc;
 
+import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -55,15 +56,13 @@ public final class PdrCommands {
                                 .executes(c -> list(c, StringArgumentType.getString(c, "player")))))
                 .then(Commands.literal("show").then(incidentArguments(PdrCommands::show)))
                 .then(Commands.literal("restore")
-                        .then(incidentArguments(c -> restore(c, "all"))
-                                .then(Commands.argument("entry", StringArgumentType.greedyString())
-                                        .suggests(ENTRIES)
-                                        .executes(c -> restore(c, StringArgumentType.getString(c, "entry"))))))
+                        .then(incidentArguments(
+                                c -> restore(c, "all"),
+                                entryArgument(c -> restore(c, StringArgumentType.getString(c, "entry"))))))
                 .then(Commands.literal("dismiss")
-                        .then(incidentArguments(c -> dismiss(c, "all"))
-                                .then(Commands.argument("entry", StringArgumentType.greedyString())
-                                        .suggests(ENTRIES)
-                                        .executes(c -> dismiss(c, StringArgumentType.getString(c, "entry"))))))
+                        .then(incidentArguments(
+                                c -> dismiss(c, "all"),
+                                entryArgument(c -> dismiss(c, StringArgumentType.getString(c, "entry"))))))
                 .then(Commands.literal("export").then(incidentArguments(PdrCommands::export))));
     }
 
@@ -73,11 +72,27 @@ public final class PdrCommands {
 
     /** {@code <player> <incident>}, running {@code action} when nothing follows. */
     private static ArgumentBuilder<CommandSourceStack, ?> incidentArguments(Action action) {
+        return incidentArguments(action, null);
+    }
+
+    /** {@code <player> <incident> [next]}: {@code next} follows the incident. */
+    private static ArgumentBuilder<CommandSourceStack, ?> incidentArguments(
+            Action action, ArgumentBuilder<CommandSourceStack, ?> next) {
+        ArgumentBuilder<CommandSourceStack, ?> incident = Commands.argument("incident", StringArgumentType.word())
+                .suggests(INCIDENTS)
+                .executes(c -> guarded(c, action));
+        if (next != null) {
+            incident.then(next);
+        }
         return Commands.argument("player", StringArgumentType.word())
                 .suggests(PLAYERS)
-                .then(Commands.argument("incident", StringArgumentType.word())
-                        .suggests(INCIDENTS)
-                        .executes(c -> guarded(c, action)));
+                .then(incident);
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> entryArgument(Command<CommandSourceStack> command) {
+        return Commands.argument("entry", StringArgumentType.greedyString())
+                .suggests(ENTRIES)
+                .executes(command);
     }
 
     private static final SuggestionProvider<CommandSourceStack> PLAYERS = (context, builder) -> {
