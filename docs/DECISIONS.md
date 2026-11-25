@@ -94,6 +94,8 @@ When placement fails even with the minimal profile, the mod restores the vanilla
 
 Why: on 26.3 and 1.21.11, reported cases include errors that remain after deleting both player files, or that appear on a brand new world. No saved data can fix those. Retrying would loop, and a new incident at every login would bury the useful report.
 
+Amended by ADR-PDR-014 on 2026-11-25: a key that keeps failing still gets one recurring issue, but every join keeps its own incident; the record only groups them.
+
 ## ADR-009: Gradle JVM per project
 
 Status: Accepted.
@@ -255,7 +257,7 @@ Amended on 2026-11-25 (the set-aside case decided by the maintainer):
 
 ## ADR-PDR-014: A recurring issue groups incidents and never replaces them
 
-Status: Accepted.
+Status: Accepted. Amends the recurring issue sentence of ADR-PDR-004.
 
 Every join whose rescue sets a key aside keeps its own incident, even when that key already has a recurring issue (SPEC.md section 4.4). The record groups those joins: a counter, the players concerned, the first and the latest payload, and an operator notice once per server start. Only mod data counts (attachments and capabilities, unknown top-level keys). Decided by the maintainer on 2026-11-25, after the review of the first implementation.
 
