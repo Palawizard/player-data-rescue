@@ -470,7 +470,7 @@ function Invoke-RestoreCheck {
 function Start-Operator {
     # An online operator for the S2 and S13 notices (SPEC.md step 7 and section 4.4): joins, is
     # made an operator, and stays.
-    param([int]$StaySeconds = 25)
+    param([int]$StaySeconds)
     $offset = Get-LatestLogLength
     Set-PlayerModes -Player 'OpBot' -Modes ''
     $bot = Start-JoinBot -Player 'OpBot' -StaySeconds $StaySeconds
@@ -565,14 +565,17 @@ function Invoke-SmokeScenarios {
             if ($scenario.Proof -and -not ((Get-LogSince -Offset $prepareOffset) -match $scenario.Proof)) {
                 throw "$id was not set up: the log has no '$($scenario.Proof)' line from the test mod."
             }
-            Save-ScenarioFixtures -ScenarioId $id -Player $scenario.Player
+            if ($scenario.Prepare.Count -gt 0) { Save-ScenarioFixtures -ScenarioId $id -Player $scenario.Player }
+            $reset = Reset-RecurringStreaks -Scenario $scenario
+            $failures += $reset.Problems
+            $summary += $reset.Lines
             $expected = Get-ExpectedOutcome -ScenarioId $id
             $incidentsBefore = Get-PlayerIncidents -Player $scenario.Player
             $operator = $null
             if ($scenario.Operator -and $null -ne (Get-ScenarioValue -Table $expectedIncidents -ScenarioId $id).Value) {
+                # About 7 to 10 s per join; Test-RecurringNotice checks the operator was there for all of them.
                 $operator = Start-Operator -StaySeconds (15 + 10 * $scenario.Join.Count)
             }
-            $streaksBefore = Get-RecurringStreaks
             $botOutputs = ''
             $scenarioLogOffset = Get-LatestLogLength
             for ($j = 0; $j -lt $scenario.Join.Count; $j++) {
@@ -590,6 +593,7 @@ function Invoke-SmokeScenarios {
                 $line = "$id $($scenario.Player): $($result.Outcome) ($($result.Detail)); log has 'Couldn't place player in world': $placeFailed; expected: $expected"
                 $summary += $line
                 if ($result.Outcome -ne $expected) { $failures += $line }
+                $failures += Test-RecurringJoin -Scenario $scenario -Index $j -JoinLog $joinLog -BotOutput $botOutput
                 if ($result.Outcome -eq 'invalid' -and -not $placeFailed) { $failures += "$id disconnected without the 'Couldn't place player in world' log line." }
                 if (@('S11', 'S15') -contains $id -and $j -eq 0 -and @([regex]::Matches($joinLog, "$($scenario.Player)\[[^\]]*\] logged in")).Count -lt 2) {
                     $failures += "$id first join: the minimal profile was not placed after the failed placement."
@@ -619,7 +623,7 @@ function Invoke-SmokeScenarios {
             $scenarioLog = Get-LogSince -Offset $scenarioLogOffset
             $failures += Test-ScenarioIncidents -Scenario $scenario -Before $incidentsBefore -BotOutputs $botOutputs -JoinLog $scenarioLog
             if (@('S13', 'S14') -contains $id) {
-                $recurring = Test-RecurringRecord -Scenario $scenario -JoinLog $scenarioLog -StreaksBefore $streaksBefore
+                $recurring = Test-RecurringRecord -Scenario $scenario -JoinLog $scenarioLog
                 $failures += $recurring.Problems
                 $summary += $recurring.Lines
             }
