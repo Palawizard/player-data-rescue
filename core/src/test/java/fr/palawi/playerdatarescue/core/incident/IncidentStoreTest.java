@@ -109,4 +109,19 @@ class IncidentStoreTest {
         assertTrue(Files.isDirectory(quarantined));
         assertFalse(Files.exists(handled));
     }
+
+    @Test
+    void pruneKeepsAnIncidentWhoseRestoreFailed() throws Exception {
+        IncidentStore store = new IncidentStore(world);
+        Path failed = store.create(PLAYER, TIME.minusDays(1));
+        Path latest = store.create(PLAYER, TIME);
+        Files.writeString(
+                failed.resolve("quarantine.json"),
+                "{\"entries\":[{\"status\":\"restore_failed\"},{\"status\":\"set_aside_again\"}]}",
+                StandardCharsets.UTF_8);
+        Files.writeString(latest.resolve("quarantine.json"), "{\"entries\":[]}", StandardCharsets.UTF_8);
+
+        assertEquals(List.of(), store.prune(PLAYER, 1));
+        assertTrue(Files.isDirectory(failed));
+    }
 }

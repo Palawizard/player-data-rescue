@@ -50,9 +50,9 @@ public interface GameJoin {
 
     /**
      * Drops restored stacks that found no free slot at the player's feet, with no pickup delay
-     * (SPEC.md section 7.1). Each stack is decoded by the game.
+     * (SPEC.md section 7.1). Each stack is decoded by the game; returns those it could not read.
      */
-    void dropAtFeet(List<NbtCompound> stacks);
+    List<NbtCompound> dropAtFeet(List<NbtCompound> stacks);
 
     /** Tells every online operator except the joining player. */
     void tellOperators(Incident incident, String folder, int permissionLevel);

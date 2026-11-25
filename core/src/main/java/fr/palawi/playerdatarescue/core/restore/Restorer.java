@@ -1,66 +1,59 @@
 package fr.palawi.playerdatarescue.core.restore;
 
-import fr.palawi.playerdatarescue.core.attribution.Suspect;
 import fr.palawi.playerdatarescue.core.incident.EntryStatus;
 import fr.palawi.playerdatarescue.core.incident.IncidentFiles;
-import fr.palawi.playerdatarescue.core.incident.IncidentRecorder;
-import fr.palawi.playerdatarescue.core.incident.IncidentStore;
-import fr.palawi.playerdatarescue.core.incident.Outcome;
-import fr.palawi.playerdatarescue.core.incident.QuarantineEntry;
-import fr.palawi.playerdatarescue.core.incident.Trigger;
-import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
-import fr.palawi.playerdatarescue.core.nbt.Snbt;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
- * The restore of SPEC.md section 7.1. An operator's command only queues entries; the next join
- * of the player puts them into the saved data before the game reads it, after a verified backup
- * of that data, and the join's result decides each entry's status. An entry already restored is
- * never queued again, so restoring twice cannot duplicate anything.
+ * The command side of a restore (SPEC.md section 7.1): an operator's command only queues entries,
+ * and the player's next join puts them back ({@link RestoreJoin}). An entry is queued only while
+ * its payload is nowhere else: not restored, not set aside again in a later incident, and not
+ * already on its way into the data, so restoring twice cannot duplicate anything.
  */
 public final class Restorer {
+    private static final String INCIDENT_NAME = "[0-9]{8}-[0-9]{6}(-[0-9]+)?";
+
     private Restorer() {}
 
     /** What a restore command did. */
     public record Queued(List<String> queued, List<String> alreadyRestored, Map<String, String> notRestorable) {}
 
-    /** Entries put into the data of a join, waiting for the join's result. */
-    public record Prepared(
-            NbtCompound data, List<RestoreQueue.Item> applied, List<NbtCompound> toDrop, Path backup, int replaced) {}
-
     /**
-     * Queues one entry, or with {@code entry} "all" every entry still set aside (dismissed
-     * entries only when named).
+     * Queues one entry, or with {@code entry} "all" every entry not dismissed (dismissed entries
+     * only when named).
      */
     public static Queued queue(Path root, UUID player, String incident, String entry) throws IOException {
-        Path folder = incidentFolder(root, player, incident);
-        IncidentFiles.Summary summary = IncidentFiles.read(folder);
-        boolean all = entry.equals("all");
-        List<IncidentFiles.Entry> chosen = summary.entries().stream()
-                .filter(e -> all ? e.status() != EntryStatus.DISMISSED : e.id().equals(entry))
-                .toList();
-        if (!all && chosen.isEmpty()) {
-            throw new IllegalArgumentException("incident " + incident + " has no entry " + entry);
-        }
+        List<IncidentFiles.Entry> chosen = chosen(root, player, incident, entry, e -> e != EntryStatus.DISMISSED);
+        Optional<RestorePending> pending = RestorePending.read(root, player);
         List<String> already = new ArrayList<>();
         Map<String, String> notRestorable = new LinkedHashMap<>();
         List<RestoreQueue.Item> items = new ArrayList<>();
         for (IncidentFiles.Entry e : chosen) {
+            RestoreQueue.Item item = new RestoreQueue.Item(incident, e.id());
             if (e.status() == EntryStatus.RESTORED) {
                 already.add(e.id());
+            } else if (e.status() == EntryStatus.SET_ASIDE_AGAIN) {
+                notRestorable.put(
+                        e.id(),
+                        e.statusReason().orElse("it was set aside again in a later incident")
+                                + "; restore it from there");
+            } else if (pending.isPresent() && pending.get().holds(item)) {
+                notRestorable.put(e.id(), "it is going back into the data at the player's current join");
+            } else if (e.id().equals("vehicle") || e.id().equals("section.RootVehicle")) {
+                notRestorable.put(e.id(), "vehicles cannot be restored yet; the payload is kept for manual recovery");
             } else if (e.payload().isEmpty()) {
                 notRestorable.put(e.id(), "it was too large to keep apart; it is only in original/");
             } else {
-                items.add(new RestoreQueue.Item(incident, e.id()));
+                items.add(item);
             }
         }
         // An entry queued by an earlier command stays queued once.
@@ -69,131 +62,29 @@ public final class Restorer {
     }
 
     /**
-     * At a join, before the game reads the player's data: puts the queued entries into {@code
-     * current}. The source files are backed up first into a new incident, which also keeps the
-     * values the restore replaced; without that backup nothing is changed. Entries that cannot go
-     * back are marked {@code restore_failed} at once. Returns empty when nothing is queued.
+     * Marks one entry, or with {@code entry} "all" every entry still set aside, as dismissed, and
+     * takes it out of the queue. Returns the ids dismissed. The data stays on disk.
      */
-    public static Optional<Prepared> prepare(
-            Path root,
-            IncidentRecorder.Context context,
-            NbtCompound current,
-            List<Path> sourceFiles,
-            String attachmentContainer)
-            throws IOException {
-        UUID player = context.playerId();
-        List<RestoreQueue.Item> queue = RestoreQueue.read(root, player);
-        if (queue.isEmpty()) {
-            return Optional.empty();
-        }
-        Map<String, RestoreMerge.Piece> pieces = new LinkedHashMap<>();
-        Map<String, RestoreQueue.Item> byKey = new LinkedHashMap<>();
-        Map<RestoreQueue.Item, String> failed = new LinkedHashMap<>();
-        for (RestoreQueue.Item item : queue) {
-            Path folder = root.resolve(player.toString()).resolve(item.incident());
-            Optional<IncidentFiles.Entry> entry = Files.isDirectory(folder)
-                    ? IncidentFiles.read(folder).entries().stream()
-                            .filter(e -> e.id().equals(item.entry()))
-                            .findFirst()
-                    : Optional.empty();
-            Optional<RestoreMerge.Piece> piece =
-                    entry.isPresent() ? IncidentFiles.piece(folder, entry.get()) : Optional.empty();
-            if (piece.isEmpty()) {
-                failed.put(item, "its payload file is missing");
-                continue;
+    public static List<String> dismiss(Path root, UUID player, String incident, String entry) throws IOException {
+        Path folder = incidentFolder(root, player, incident);
+        Optional<RestorePending> pending = RestorePending.read(root, player);
+        Map<String, EntryStatus> statuses = new LinkedHashMap<>();
+        List<RestoreQueue.Item> unqueue = new ArrayList<>();
+        for (IncidentFiles.Entry e : chosen(root, player, incident, entry, EntryStatus::dismissable)) {
+            RestoreQueue.Item item = new RestoreQueue.Item(incident, e.id());
+            if (e.status().dismissable() && (pending.isEmpty() || !pending.get().holds(item))) {
+                statuses.put(e.id(), EntryStatus.DISMISSED);
+                unqueue.add(item);
             }
-            String key = item.incident() + "/" + item.entry();
-            pieces.put(
-                    key,
-                    new RestoreMerge.Piece(key, piece.get().data(), piece.get().dataVersion()));
-            byKey.put(key, item);
         }
-        List<RestoreMerge.Piece> ordered = new ArrayList<>();
-        for (RestoreMerge.Piece piece : pieces.values()) {
-            String entryId = byKey.get(piece.entryId()).entry();
-            ordered.add(new RestoreMerge.Piece(entryId, piece.data(), piece.dataVersion()));
-        }
-        RestoreMerge.Result merged = RestoreMerge.apply(current, ordered, attachmentContainer);
-        List<RestoreQueue.Item> applied = new ArrayList<>();
-        int index = 0;
-        for (String key : pieces.keySet()) {
-            RestoreQueue.Item item = byKey.get(key);
-            String reason = merged.refused().get(ordered.get(index).entryId());
-            if (reason != null) {
-                failed.put(item, reason);
-            } else {
-                applied.add(item);
-            }
-            index++;
-        }
-
-        Path backup = new IncidentStore(root.getParent()).create(player, LocalDateTime.now());
-        List<String> originals = IncidentStore.backup(backup, sourceFiles);
-        recordBackup(context.withFolder(backup, originals), merged, applied, current);
-
-        for (Map.Entry<RestoreQueue.Item, String> e : failed.entrySet()) {
-            mark(root, player, e.getKey(), EntryStatus.RESTORE_FAILED, e.getValue());
-        }
-        RestoreQueue.remove(root, player, queue);
-        return Optional.of(new Prepared(
-                merged.data(),
-                applied,
-                merged.toDrop(),
-                backup,
-                merged.replaced().size()));
+        IncidentFiles.setStatus(folder, statuses, Map.of());
+        RestoreQueue.remove(root, player, unqueue);
+        return List.copyOf(statuses.keySet());
     }
 
-    /** After the join: each applied entry is restored, unless the join set it aside again. */
-    public static void finish(Path root, UUID player, Prepared prepared, Map<String, String> failedAgain)
-            throws IOException {
-        for (RestoreQueue.Item item : prepared.applied()) {
-            String reason = failedAgain.get(item.entry());
-            mark(root, player, item, reason == null ? EntryStatus.RESTORED : EntryStatus.RESTORE_FAILED, reason);
-        }
-    }
-
-    private static void mark(Path root, UUID player, RestoreQueue.Item item, EntryStatus status, String reason)
-            throws IOException {
-        Path folder = root.resolve(player.toString()).resolve(item.incident());
-        if (Files.isDirectory(folder)) {
-            IncidentFiles.setStatus(
-                    folder, Map.of(item.entry(), status), reason == null ? Map.of() : Map.of(item.entry(), reason));
-        }
-    }
-
-    /** The backup incident: the source files as they were, and what the restore replaced. */
-    private static void recordBackup(
-            IncidentRecorder.Context context,
-            RestoreMerge.Result merged,
-            List<RestoreQueue.Item> applied,
-            NbtCompound current)
-            throws IOException {
-        List<QuarantineEntry> entries = new ArrayList<>();
-        List<String> payloadNames = new ArrayList<>();
-        Optional<Integer> dataVersion = current.number("DataVersion").map(Number::intValue);
-        String from = String.join(
-                ", ",
-                applied.stream().map(RestoreQueue.Item::incident).distinct().toList());
-        for (RestoreMerge.Replaced replaced : merged.replaced()) {
-            Optional<String> payload = IncidentStore.writePayload(
-                    context.folder(), replaced.id(), replaced.payload(), dataVersion, payloadNames);
-            entries.add(new QuarantineEntry(
-                    replaced.id(),
-                    replaced.section(),
-                    replaced.slot(),
-                    "Replaced by the restore from " + from + ": " + replaced.id(),
-                    payload.isPresent() ? Snbt.write(replaced.payload()) : "",
-                    null,
-                    List.<Suspect>of(),
-                    EntryStatus.QUARANTINED,
-                    payload,
-                    payload.isEmpty()));
-        }
-        IncidentRecorder.recordBackup(context, Trigger.RESTORE, Outcome.RESTORE_BACKUP, entries);
-    }
-
-    private static Path incidentFolder(Path root, UUID player, String incident) {
-        if (!incident.matches("[0-9]{8}-[0-9]{6}(-[0-9]+)?")) {
+    /** The folder of {@code incident}, refused unless it is a real incident of this player. */
+    public static Path incidentFolder(Path root, UUID player, String incident) {
+        if (!incident.matches(INCIDENT_NAME)) {
             throw new IllegalArgumentException("no incident " + incident);
         }
         Path folder = root.resolve(player.toString()).resolve(incident);
@@ -201,5 +92,35 @@ public final class Restorer {
             throw new IllegalArgumentException("no incident " + incident + " for this player");
         }
         return folder;
+    }
+
+    static boolean isIncidentName(String incident) {
+        return incident.matches(INCIDENT_NAME);
+    }
+
+    /** Sets the status of one entry, when its incident still exists. */
+    static void mark(Path root, UUID player, RestoreQueue.Item item, EntryStatus status, String reason)
+            throws IOException {
+        if (!isIncidentName(item.incident())) {
+            return;
+        }
+        Path folder = root.resolve(player.toString()).resolve(item.incident());
+        if (Files.isDirectory(folder)) {
+            IncidentFiles.setStatus(
+                    folder, Map.of(item.entry(), status), reason == null ? Map.of() : Map.of(item.entry(), reason));
+        }
+    }
+
+    private static List<IncidentFiles.Entry> chosen(
+            Path root, UUID player, String incident, String entry, Predicate<EntryStatus> forAll) throws IOException {
+        IncidentFiles.Summary summary = IncidentFiles.read(incidentFolder(root, player, incident));
+        boolean all = entry.equals("all");
+        List<IncidentFiles.Entry> chosen = summary.entries().stream()
+                .filter(e -> all ? forAll.test(e.status()) : e.id().equals(entry))
+                .toList();
+        if (!all && chosen.isEmpty()) {
+            throw new IllegalArgumentException("incident " + incident + " has no entry " + entry);
+        }
+        return chosen;
     }
 }

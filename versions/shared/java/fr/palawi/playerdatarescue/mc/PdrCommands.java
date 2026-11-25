@@ -10,14 +10,13 @@ import fr.palawi.playerdatarescue.core.ModInfo;
 import fr.palawi.playerdatarescue.core.incident.EntryStatus;
 import fr.palawi.playerdatarescue.core.incident.IncidentFiles;
 import fr.palawi.playerdatarescue.core.incident.IncidentStore;
+import fr.palawi.playerdatarescue.core.restore.RestorePending;
 import fr.palawi.playerdatarescue.core.restore.RestoreQueue;
 import fr.palawi.playerdatarescue.core.restore.Restorer;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.ChatFormatting;
@@ -215,19 +214,25 @@ public final class PdrCommands {
                 context,
                 Component.literal("Incident " + s.folder() + " of " + s.playerName() + ", " + s.time() + ", trigger "
                         + s.trigger() + ", " + s.outcome().replace('_', ' ') + "."));
-        List<RestoreQueue.Item> queue =
-                RestoreQueue.read(root(context.getSource().getServer()), player.id());
+        Path root = root(context.getSource().getServer());
+        List<RestoreQueue.Item> queue = RestoreQueue.read(root, player.id());
+        Optional<RestorePending> pending = RestorePending.read(root, player.id());
         for (IncidentFiles.Entry e : s.entries()) {
-            boolean waiting = queue.contains(new RestoreQueue.Item(incident, e.id()));
-            String status =
-                    waiting ? "to restore at the next join" : e.status().json().replace('_', ' ');
+            RestoreQueue.Item item = new RestoreQueue.Item(incident, e.id());
+            boolean inFlight = pending.isPresent() && pending.get().holds(item);
+            boolean waiting = queue.contains(item) || inFlight;
+            String status = inFlight
+                    ? "going back into the data at the current join"
+                    : waiting
+                            ? "to restore at the next join"
+                            : e.status().json().replace('_', ' ');
             MutableComponent line = Component.literal("- " + e.id() + ": " + e.description() + " (" + status
                     + e.statusReason().map(r -> ": " + r).orElse("") + ") ");
-            if (e.status() != EntryStatus.RESTORED && !waiting && e.payload().isPresent()) {
+            if (e.status().restorable() && !waiting && e.payload().isPresent()) {
                 line.append(Texts.action(
                         "restore", "/" + ROOT + " restore " + player.id() + " " + incident + " " + e.id()));
             }
-            if (e.status() == EntryStatus.QUARANTINED || e.status() == EntryStatus.RESTORE_FAILED) {
+            if (e.status().dismissable() && !inFlight) {
                 line.append(" ")
                         .append(Texts.action(
                                 "dismiss", "/" + ROOT + " dismiss " + player.id() + " " + incident + " " + e.id()));
@@ -287,32 +292,17 @@ public final class PdrCommands {
         return guarded(context, c -> {
             Player player = require(c, StringArgumentType.getString(c, "player"));
             String incident = StringArgumentType.getString(c, "incident");
-            Path folder = incidentFolder(c, player, incident);
-            IncidentFiles.Summary s = IncidentFiles.read(folder);
-            boolean all = entry.equals("all");
-            if (!all && s.entries().stream().noneMatch(e -> e.id().equals(entry))) {
-                throw new IllegalArgumentException("Incident " + incident + " has no entry " + entry + ".");
-            }
-            Map<String, EntryStatus> statuses = new LinkedHashMap<>();
-            List<RestoreQueue.Item> unqueue = new ArrayList<>();
-            for (IncidentFiles.Entry e : s.entries()) {
-                boolean chosen = all || e.id().equals(entry);
-                if (chosen && (e.status() == EntryStatus.QUARANTINED || e.status() == EntryStatus.RESTORE_FAILED)) {
-                    statuses.put(e.id(), EntryStatus.DISMISSED);
-                    unqueue.add(new RestoreQueue.Item(incident, e.id()));
-                }
-            }
-            IncidentFiles.setStatus(folder, statuses, Map.of());
-            RestoreQueue.remove(root(c.getSource().getServer()), player.id(), unqueue);
+            incidentFolder(c, player, incident);
+            List<String> dismissed = Restorer.dismiss(root(c.getSource().getServer()), player.id(), incident, entry);
             say(
                     c,
                     Component.literal(
-                            statuses.isEmpty()
+                            dismissed.isEmpty()
                                     ? "Nothing to dismiss in " + incident + "."
-                                    : "Dismissed " + count(statuses.size(), "entry") + " of " + player.name() + ": "
-                                            + String.join(", ", statuses.keySet())
+                                    : "Dismissed " + count(dismissed.size(), "entry") + " of " + player.name() + ": "
+                                            + String.join(", ", dismissed)
                                             + ". The data stays in the incident folder."));
-            return statuses.size();
+            return dismissed.size();
         });
     }
 

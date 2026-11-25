@@ -99,9 +99,9 @@ public final class RescueService {
             // The timed hooks of a failed join (the hold, and on 1.20.1 the read of each attempt)
             // never reach the normal path report, so their time must not end up in the next join's.
             Timing.take(join.id());
-            // Restored entries of a join that failed without a rescue result failed too; when
-            // the rescue ran, it has already decided each one.
-            RestoreService.rescued(join, null, null);
+            // Entries a queued restore put into this join's data are decided once the rescue,
+            // if any, has put the player in the world or given up.
+            RestoreService.afterPlacementFailure(join);
         }
     }
 

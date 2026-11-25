@@ -5,18 +5,19 @@ import fr.palawi.playerdatarescue.core.incident.Incident;
 import fr.palawi.playerdatarescue.core.incident.IncidentFiles;
 import fr.palawi.playerdatarescue.core.incident.IncidentRecorder;
 import fr.palawi.playerdatarescue.core.incident.IncidentStore;
-import fr.palawi.playerdatarescue.core.incident.Outcome;
+import fr.palawi.playerdatarescue.core.io.AtomicFiles;
 import fr.palawi.playerdatarescue.core.nbt.NbtCompound;
+import fr.palawi.playerdatarescue.core.nbt.Snbt;
 import fr.palawi.playerdatarescue.core.rescue.RescueResult;
+import fr.palawi.playerdatarescue.core.restore.RestoreJoin;
+import fr.palawi.playerdatarescue.core.restore.RestorePending;
 import fr.palawi.playerdatarescue.core.restore.RestoreQueue;
-import fr.palawi.playerdatarescue.core.restore.Restorer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,19 +28,31 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The join side of a restore (SPEC.md section 7.1, ADR-PDR-013): at the start of a join, before
- * the game reads the player's data, the entries an operator queued go into that data, and the
- * join's result decides whether each one is restored. Called on the server thread.
+ * The join side of a restore (SPEC.md section 7.1, ADR-PDR-013), around {@link RestoreJoin}: at
+ * the start of a join, before the game reads the player's data, the entries an operator queued go
+ * into that data; where the join ends decides each one. Called on the server thread.
  */
 public final class RestoreService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModInfo.MOD_ID);
 
-    private static final Map<UUID, Restorer.Prepared> RESTORING = new HashMap<>();
+    /** Joins of this process with a restore record on disk, waiting for their result. */
+    private static final Map<UUID, Active> ACTIVE = new HashMap<>();
     /**
-     * Players with a queue file, per world (an integrated server can open several worlds), read
-     * from disk at the first join into that world.
+     * Players with a queue or a restore record, per world (an integrated server can open several
+     * worlds), read from disk at the first join into that world.
      */
-    private static final Map<Path, Set<UUID>> QUEUED = new HashMap<>();
+    private static final Map<Path, Set<UUID>> WAITING = new HashMap<>();
+
+    /** A join with a restore record: the source it wrote the merged data to, if it did, and its rescue. */
+    private static final class Active {
+        final DataSource written;
+        RescueResult rescue;
+        Path incident;
+
+        Active(DataSource written) {
+            this.written = written;
+        }
+    }
 
     private RestoreService() {}
 
@@ -59,17 +72,22 @@ public final class RestoreService {
             if (!RescueService.active()) {
                 return;
             }
-            Restorer.Prepared stale = RESTORING.remove(id);
-            if (stale != null) {
-                // The last join that applied a queue was read without a failure, then ended
-                // before the login handler returned (1.20.1 delays a placement while the same
-                // player is still online). The game read that data, so it counts as restored.
-                finish(world, id, stale, Map.of());
-            }
+            // A join of this player that never reported its result: its record is settled from disk.
+            ACTIVE.remove(id);
             if (!players(world).contains(id)) {
                 return;
             }
-            apply(id, name, world, minecraftVersion, source.get());
+            Path root = new IncidentStore(world).root();
+            DataSource data = source.get();
+            RestoreJoin.recover(root, id, sha(data));
+            DataSource written = null;
+            if (Files.isRegularFile(RestoreQueue.file(root, id))) {
+                written = apply(id, name, world, minecraftVersion, data) ? data : null;
+            }
+            if (Files.isRegularFile(RestorePending.file(root, id))) {
+                ACTIVE.put(id, new Active(written));
+            }
+            forgetIfDone(world, id);
         } catch (IOException | RuntimeException e) {
             LOGGER.error("[{}] the queued restore of {} failed; the player joins without it", ModInfo.MOD_ID, name, e);
         } finally {
@@ -77,7 +95,8 @@ public final class RestoreService {
         }
     }
 
-    private static void apply(UUID id, String name, Path world, String minecraftVersion, DataSource source)
+    /** Puts the queue into the data; true when merged data was written. */
+    private static boolean apply(UUID id, String name, Path world, String minecraftVersion, DataSource source)
             throws IOException {
         Optional<NbtCompound> current = source.read();
         if (current.isEmpty()) {
@@ -85,7 +104,7 @@ public final class RestoreService {
                     "[{}] {} has entries to restore, but no readable saved data to put them in; they stay queued",
                     ModInfo.MOD_ID,
                     name);
-            return;
+            return false;
         }
         Path root = new IncidentStore(world).root();
         IncidentRecorder.Context context = new IncidentRecorder.Context(
@@ -99,99 +118,155 @@ public final class RestoreService {
                         RescueService.bridge().loaderVersion(),
                         RescueService.bridge().modVersion()),
                 List.of());
-        Optional<Restorer.Prepared> prepared =
-                Restorer.prepare(root, context, current.get(), source.backupFiles(), attachmentContainer());
-        players(world).remove(id);
+        Optional<RestoreJoin.Prepared> prepared = RestoreJoin.prepare(
+                root, context, current.get(), source.backupFiles(), sha(source), attachmentContainer());
         if (prepared.isEmpty()) {
-            return;
+            return false;
         }
-        source.write(prepared.get().data());
-        RESTORING.put(id, prepared.get());
+        try {
+            source.write(prepared.get().data());
+        } catch (RuntimeException e) {
+            RestoreJoin.abort(root, id);
+            throw e;
+        }
         LOGGER.warn(
                 "[{}] restoring {} entr{} for {}; the data before is backed up in {}",
                 ModInfo.MOD_ID,
-                prepared.get().applied().size(),
-                prepared.get().applied().size() == 1 ? "y" : "ies",
+                prepared.get().applied(),
+                prepared.get().applied() == 1 ? "y" : "ies",
                 name,
                 prepared.get().backup());
+        return true;
     }
 
     /** The join ended with the player in the world, without a rescue. */
-    static void joined(GameJoin join) {
-        Restorer.Prepared prepared = RESTORING.remove(join.id());
-        if (prepared == null) {
-            return;
+    public static void joined(GameJoin join) {
+        Active active = ACTIVE.remove(join.id());
+        if (active != null) {
+            finish(join, RestoreJoin.End.joined());
         }
-        try {
-            finish(join.worldDirectory(), join.id(), prepared, Map.of());
-            if (!prepared.toDrop().isEmpty()) {
-                join.dropAtFeet(prepared.toDrop());
-                LOGGER.warn(
-                        "[{}] {} had no free slot for {} restored stack(s); dropped at their feet",
-                        ModInfo.MOD_ID,
-                        join.name(),
-                        prepared.toDrop().size());
-            }
-            join.tellRestored(prepared.applied().size());
-            LOGGER.warn(
-                    "[{}] {} joined with {} restored entr{}",
-                    ModInfo.MOD_ID,
-                    join.name(),
-                    prepared.applied().size(),
-                    prepared.applied().size() == 1 ? "y" : "ies");
-        } catch (IOException | RuntimeException e) {
-            LOGGER.error("[{}] could not record the restore of {}", ModInfo.MOD_ID, join.name(), e);
+    }
+
+    /** The rescue of this join ran; where the join ends is decided once the rescue returns. */
+    static void rescued(GameJoin join, RescueResult result, Path incident) {
+        Active active = ACTIVE.get(join.id());
+        if (active != null) {
+            active.rescue = result;
+            active.incident = incident;
         }
     }
 
     /**
-     * The join that applied a queue failed and the rescue ran ({@code result} is null when the
-     * rescue did not run or failed, and {@code incident} with it). Entries the rescue set aside again, or every entry when the player
-     * did not join with the salvaged data, are marked {@code restore_failed}.
+     * The placement of this join failed, and the rescue, if any, has returned. In the world, the
+     * rescue result decides each entry. Out of it, the data is put back as it was before the
+     * restore (after the rescue put back what it read, the merged data), so the entries are back
+     * in their incident only.
      */
-    static void rescued(GameJoin join, RescueResult result, Path incident) {
-        Restorer.Prepared prepared = RESTORING.remove(join.id());
-        if (prepared == null) {
+    static void afterPlacementFailure(GameJoin join) {
+        Active active = ACTIVE.remove(join.id());
+        if (active == null) {
             return;
         }
-        String reason = incident == null
-                ? "the join failed before a rescue; see the server log"
-                : "it failed to load again; see incident " + incident.getFileName();
-        Map<String, String> failed = new LinkedHashMap<>();
-        Set<String> aside = new HashSet<>();
-        if (result != null) {
-            result.aside().forEach(a -> aside.add(a.unit().id()));
-        }
-        boolean wholeFailure = result == null || result.outcome() != Outcome.RESCUED;
-        for (RestoreQueue.Item item : prepared.applied()) {
-            if (wholeFailure || aside.contains(item.entry())) {
-                failed.put(item.entry(), reason);
-            }
+        if (join.placed()) {
+            RescueResult rescue = active.rescue;
+            finish(
+                    join,
+                    rescue == null || active.incident == null
+                            ? RestoreJoin.End.joined()
+                            : RestoreJoin.End.rescued(
+                                    active.incident.getFileName().toString(),
+                                    rescue.outcome(),
+                                    rescue.aside().stream()
+                                            .map(a -> a.unit().payload())
+                                            .toList()));
+            return;
         }
         try {
-            finish(join.worldDirectory(), join.id(), prepared, failed);
+            if (active.written != null) {
+                active.written.restore();
+            }
+            String reason = active.incident == null
+                    ? "the join failed; the data was put back as it was before the restore (see the server log)"
+                    : "the join failed (incident " + active.incident.getFileName()
+                            + "); the data was put back as it was before the restore";
+            RestoreJoin.afterJoin(root(join), join.id(), RestoreJoin.End.notPlaced(reason));
+        } catch (IOException | RuntimeException e) {
+            // The record stays on disk: the next join settles it from what the player file holds.
+            LOGGER.error(
+                    "[{}] could not put back the data of {} as it was before the restore",
+                    ModInfo.MOD_ID,
+                    join.name(),
+                    e);
+        }
+    }
+
+    private static void finish(GameJoin join, RestoreJoin.End end) {
+        try {
+            RestoreJoin.Delivery delivery = RestoreJoin.afterJoin(root(join), join.id(), end);
+            if (!delivery.drops().isEmpty()) {
+                List<NbtCompound> unread = join.dropAtFeet(delivery.drops());
+                LOGGER.warn(
+                        "[{}] {} had no free slot for {} restored stack(s); dropped at their feet",
+                        ModInfo.MOD_ID,
+                        join.name(),
+                        delivery.drops().size() - unread.size());
+                for (NbtCompound stack : unread) {
+                    LOGGER.error(
+                            "[{}] the game could not read a restored stack of {}, so it was not dropped: {}",
+                            ModInfo.MOD_ID,
+                            join.name(),
+                            Snbt.write(stack));
+                }
+            }
+            RestoreJoin.delivered(root(join), join.id());
+            if (delivery.restored() > 0) {
+                join.tellRestored(delivery.restored());
+            }
+            if (delivery.restored() + delivery.setAsideAgain() > 0) {
+                LOGGER.warn(
+                        "[{}] {} joined with {} restored entr{}, {} set aside again",
+                        ModInfo.MOD_ID,
+                        join.name(),
+                        delivery.restored(),
+                        delivery.restored() == 1 ? "y" : "ies",
+                        delivery.setAsideAgain());
+            }
+            forgetIfDone(join.worldDirectory(), join.id());
         } catch (IOException | RuntimeException e) {
             LOGGER.error("[{}] could not record the restore of {}", ModInfo.MOD_ID, join.name(), e);
         }
     }
 
-    private static void finish(Path world, UUID id, Restorer.Prepared prepared, Map<String, String> failed)
-            throws IOException {
-        Restorer.finish(new IncidentStore(world).root(), id, prepared, failed);
+    private static void forgetIfDone(Path world, UUID id) throws IOException {
+        Path root = new IncidentStore(world).root();
+        if (!Files.isRegularFile(RestoreQueue.file(root, id)) && !Files.isRegularFile(RestorePending.file(root, id))) {
+            players(world).remove(id);
+        }
+    }
+
+    /** The SHA-256 of the file the game reads this player from, as it is on disk now. */
+    private static String sha(DataSource source) throws IOException {
+        Path file = source.backupFiles().get(0);
+        return Files.isRegularFile(file) ? AtomicFiles.sha256(Files.readAllBytes(file)) : "absent";
+    }
+
+    private static Path root(GameJoin join) {
+        return new IncidentStore(join.worldDirectory()).root();
     }
 
     private static Set<UUID> players(Path world) throws IOException {
         Path key = world.toAbsolutePath().normalize();
-        Set<UUID> players = QUEUED.get(key);
+        Set<UUID> players = WAITING.get(key);
         if (players == null) {
             players = new HashSet<>();
             Path root = new IncidentStore(world).root();
             for (UUID player : IncidentFiles.players(root)) {
-                if (Files.isRegularFile(RestoreQueue.file(root, player))) {
+                if (Files.isRegularFile(RestoreQueue.file(root, player))
+                        || Files.isRegularFile(RestorePending.file(root, player))) {
                     players.add(player);
                 }
             }
-            QUEUED.put(key, players);
+            WAITING.put(key, players);
         }
         return players;
     }

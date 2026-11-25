@@ -104,7 +104,8 @@ public final class IncidentStore {
 
     /**
      * Keeps the latest {@code max} incidents of a player. Older incidents are removed only when
-     * none of their entries is still quarantined (SPEC.md section 6). Returns the removed folders.
+     * none of their entries can still be restored (quarantined, or a restore that failed and can
+     * be queued again; SPEC.md section 6). Returns the removed folders.
      */
     public List<Path> prune(UUID player, int max) throws IOException {
         Path playerDir = root.resolve(player.toString());
@@ -129,7 +130,7 @@ public final class IncidentStore {
         return removed;
     }
 
-    /** True when {@code quarantine.json} lists an entry still quarantined, or cannot be read. */
+    /** True when {@code quarantine.json} lists an entry that can still be restored, or cannot be read. */
     static boolean stillQuarantined(Path incident) {
         Path file = incident.resolve("quarantine.json");
         if (!Files.isRegularFile(file)) {
@@ -138,9 +139,9 @@ public final class IncidentStore {
         try {
             JsonElement json = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8));
             for (JsonElement entry : json.getAsJsonObject().getAsJsonArray("entries")) {
-                if (EntryStatus.QUARANTINED
-                        .json()
-                        .equals(entry.getAsJsonObject().get("status").getAsString())) {
+                String status = entry.getAsJsonObject().get("status").getAsString();
+                if (EntryStatus.QUARANTINED.json().equals(status)
+                        || EntryStatus.RESTORE_FAILED.json().equals(status)) {
                     return true;
                 }
             }

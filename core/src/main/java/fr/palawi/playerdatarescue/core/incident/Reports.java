@@ -155,7 +155,8 @@ public final class Reports {
             case RESTORE_BACKUP ->
                 incident.entries().isEmpty()
                         ? "nothing to do; this is the backup of the restore."
-                        : "to undo the restore, run " + restore + " all.";
+                        : "the values the restore replaced are kept here; to put one back, run " + restore
+                                + " <entry>. The data from before the restore is in original/.";
             case UNREADABLE_FILE -> "if the player needs their old data, ask for help with the files in original/.";
             default ->
                 mod == null
