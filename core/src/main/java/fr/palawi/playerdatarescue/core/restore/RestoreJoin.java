@@ -99,6 +99,8 @@ public final class RestoreJoin {
                 root,
                 player,
                 pending.get().items().stream().map(RestorePending.Item::entry).toList());
+        keptInTheData(
+                root, player, pending.get().backup(), "the restore never reached the data, so this value stayed there");
         new RestorePending(
                         pending.get().backup(),
                         pending.get().originalSha(),
@@ -171,8 +173,10 @@ public final class RestoreJoin {
         }
         List<NbtCompound> carry =
                 RestorePending.read(root, player).map(RestorePending::carry).orElse(List.of());
-        new RestorePending(backup.getFileName().toString(), currentSha, items, carry).write(root, player);
+        // Out of the queue first: if the record cannot be written, the entries are still set aside
+        // in their incident, and only the queue line is lost.
         RestoreQueue.remove(root, player, queue);
+        new RestorePending(backup.getFileName().toString(), currentSha, items, carry).write(root, player);
         return Optional.of(
                 new Prepared(merged.data(), applied.size(), merged.replaced().size(), backup));
     }
@@ -202,6 +206,10 @@ public final class RestoreJoin {
         if (!end.placed()) {
             for (RestorePending.Item item : p.items()) {
                 Restorer.mark(root, player, item.entry(), EntryStatus.RESTORE_FAILED, end.reason());
+            }
+            if (!p.items().isEmpty()) {
+                keptInTheData(
+                        root, player, p.backup(), "the data was put back as it was, so this value is there again");
             }
             new RestorePending(p.backup(), p.originalSha(), List.of(), p.carry()).write(root, player);
             return Delivery.NOTHING;
@@ -234,6 +242,27 @@ public final class RestoreJoin {
         if (pending.isPresent() && pending.get().items().isEmpty()) {
             Files.deleteIfExists(RestorePending.file(root, player));
         }
+    }
+
+    /**
+     * The values the backup incident kept as replaced are in the player's data after all: they
+     * must not be restorable from the backup too.
+     */
+    private static void keptInTheData(Path root, UUID player, String backup, String reason) throws IOException {
+        if (!Restorer.isIncidentName(backup)) {
+            return;
+        }
+        Path folder = root.resolve(player.toString()).resolve(backup);
+        if (!Files.isRegularFile(folder.resolve("report.json"))) {
+            return;
+        }
+        Map<String, EntryStatus> statuses = new LinkedHashMap<>();
+        Map<String, String> reasons = new LinkedHashMap<>();
+        for (IncidentFiles.Entry entry : IncidentFiles.read(folder).entries()) {
+            statuses.put(entry.id(), EntryStatus.RESTORED);
+            reasons.put(entry.id(), reason);
+        }
+        IncidentFiles.setStatus(folder, statuses, reasons);
     }
 
     /** True when the rescue set aside one of the tags this entry put into the data. */

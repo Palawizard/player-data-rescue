@@ -41,23 +41,41 @@ final class RestoreBench {
     final Path world;
     final Path root;
     final Path playerFile;
-    private final NbtCompound s1;
+    private final NbtCompound saved;
     private int rescues;
 
     RestoreBench(Path world) throws IOException {
+        this(world, "1.20.1-fabric/S1Bot.dat");
+    }
+
+    /** A world whose player file is the fixture {@code fixture}. */
+    RestoreBench(Path world, String fixture) throws IOException {
         this.world = world;
         this.root = world.resolve(IncidentStore.FOLDER);
-        this.s1 = Fixtures.read("1.20.1-fabric/S1Bot.dat");
+        this.saved = Fixtures.read(fixture);
         this.playerFile = world.resolve("playerdata").resolve(PLAYER + ".dat");
         Files.createDirectories(playerFile.getParent());
-        Files.copy(Fixtures.path("1.20.1-fabric/S1Bot.dat"), playerFile);
+        Files.copy(Fixtures.path(fixture), playerFile);
     }
 
     /** A rescue that set slot 17 aside; the player was saved without it. Returns the incident. */
     String rescueSlot17() throws IOException {
+        String incident = rescue("inv.17");
         NbtCompound data = NbtIo.read(playerFile);
-        Unit slot = PlayerData.of(s1).units().stream()
-                .filter(u -> u.id().equals("inv.17"))
+        NbtList inventory = data.list("Inventory").orElseThrow();
+        for (int i = inventory.size() - 1; i >= 0; i--) {
+            if (((NbtCompound) inventory.get(i)).string("id").equals(Optional.of(ITEM))) {
+                inventory.remove(i);
+            }
+        }
+        write(data);
+        return incident;
+    }
+
+    /** A rescue that set the unit {@code unitId} of the fixture aside, the data left as it is. */
+    String rescue(String unitId) throws IOException {
+        Unit unit = PlayerData.of(saved).units().stream()
+                .filter(u -> u.id().equals(unitId))
                 .findFirst()
                 .orElseThrow();
         Path folder = new IncidentStore(world).create(PLAYER, LocalDateTime.of(2026, 11, 24, 12, 0, rescues++));
@@ -67,7 +85,7 @@ final class RestoreBench {
                 Trigger.T1,
                 Outcome.RESCUED,
                 List.of(new RescueResult.SetAside(
-                        slot,
+                        unit,
                         failure,
                         List.of(new Suspect("pdrtest", "the mod's data failed to load", Confidence.HIGH)))),
                 List.of(),
@@ -75,14 +93,7 @@ final class RestoreBench {
                 failure,
                 2);
         IncidentRecorder.record(
-                context(folder, originals), result, s1.number("DataVersion").map(Number::intValue));
-        NbtList inventory = data.list("Inventory").orElseThrow();
-        for (int i = inventory.size() - 1; i >= 0; i--) {
-            if (((NbtCompound) inventory.get(i)).string("id").equals(Optional.of(ITEM))) {
-                inventory.remove(i);
-            }
-        }
-        write(data);
+                context(folder, originals), result, saved.number("DataVersion").map(Number::intValue));
         return folder.getFileName().toString();
     }
 
@@ -151,6 +162,10 @@ final class RestoreBench {
 
     EntryStatus status(String incident) throws IOException {
         return entry(incident).status();
+    }
+
+    IncidentFiles.Summary summary(String incident) throws IOException {
+        return IncidentFiles.read(root.resolve(PLAYER.toString()).resolve(incident));
     }
 
     IncidentFiles.Entry entry(String incident) throws IOException {
