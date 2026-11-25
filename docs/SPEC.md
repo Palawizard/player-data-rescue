@@ -134,7 +134,7 @@ The root command is `/pdrescue`. The permission level is configurable (default 3
 | `/pdrescue show <player> <incident>` | Print the summary and the entries, each with a clickable restore action. |
 | `/pdrescue restore <player> <incident> [entry\|all]` | Re-apply entries (§7.1). |
 | `/pdrescue dismiss <player> <incident> [entry\|all]` | Mark entries as dismissed. The data stays on disk. |
-| `/pdrescue dismiss recurring <key>` | Close a recurring issue. |
+| `/pdrescue dismiss recurring <key>` | Close a recurring issue. For a player named `recurring`, `dismiss` takes their UUID. |
 | `/pdrescue export <player> <incident>` | Print the incident folder path for bug reports. |
 
 Player arguments accept an online player's name, and the name or UUID of a player who has incidents, online or not. `restore all` and `dismiss all` leave dismissed entries alone; a dismissed entry can still be restored by its id. Clickable actions use the player's UUID.
@@ -194,7 +194,7 @@ S1, S3, S4 and S7, and S2, S13 and S14 on NeoForge, depend on T4. They are check
 | S10 | The mod is removed after incidents were recorded. | The world loads. | The world loads normally, and the `playerdatarescue/` folder is ignored. |
 | S11 | The test mod throws on every placement, whatever the data. | P joins twice. | Both joins end with the vanilla disconnect. One incident and one diagnosis report are written, saying the data is not the cause and naming the test mod. The second join does not retry a rescue. Nothing loops or crashes. |
 | S12 | Valid player data. | P joins. | No incident and no file written. The extra work on the normal path is under 1 ms. |
-| S13 | The test mod saves an attachment it cannot read back. | P joins and leaves four times. | Every join creates an incident. From the third consecutive failure the key becomes a recurring issue: one record that counts the third and fourth joins, and operators get the recurring notice once. |
+| S13 | The test mod saves an attachment it cannot read back. | P joins and leaves four times. | Every join creates an incident. From the third consecutive failure the key becomes a recurring issue: one record, created at the third join with a counter of 3, and at 4 after the fourth; operators get the recurring notice once. |
 | S14 | S13, then the test mod is switched to a fixed behaviour. | P joins. | The attachment loads, and the recurring record is closed automatically. |
 | S15 | The test mod's placement fails only when P's saved data holds its attachment (a data-related T3). | P joins with the vanilla client. | P joins with the minimal profile on the same connection, the client stays connected and moves its player. One incident: T3, minimal profile, the attachment set aside with the other sections, the test mod as suspect. |
 | S16 | S15, then the test mod's placement accepts the attachment again. | An operator runs `restore` for the whole inventory twice, and P joins after each. | The stacks come back once, in their slots, and the second restore says the entry is already restored. The data before the restore is backed up in a new incident. |
