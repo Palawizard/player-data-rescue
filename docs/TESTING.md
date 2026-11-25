@@ -118,27 +118,26 @@ S2 and S15 check the fall. A client that got a second login packet passed every 
 
 Observed on 2026-11-24 with portablemc 5.0.6, on every Tier A band (Forge and Fabric 1.20.1; Forge, Fabric and NeoForge 1.21.1 and 26.3), on the code of this change: S15 placed the player twice on the server, its join client got one login packet, and the vanilla client stayed 30 seconds, fell 3 blocks back after the lift, showed the chat marker and the player message, and logged no error (the vanilla client's own count of login packets is not read: the fall is its proof); S11 disconnected the vanilla client twice with "Invalid player data", shown in its log on 1.21.1 and 26.3, and no packet error; S2 passed on Forge and Fabric; `OpClient` showed every operator notice; S10 passed after the run. Before the packet hold, on Fabric 1.21.1, S15 passed every other check while a lift by RCON showed its player stuck in the air.
 
-## Manual check: S8, singleplayer host
+## S8 with the real client: singleplayer host
 
-The integrated server only exists with a real game client, so S8 is checked by hand. The core part is covered by `HostDataTest` on a real `level.dat` whose `Data.Player` holds the test attachment.
+The integrated server only exists with a real game client. `HostDataTest` covers the core part on a real `level.dat` whose `Data.Player` holds the test attachment; this check runs the whole path on one band, with the setup of Real client checks above:
 
-Setup, once per band (Fabric 1.20.1 and Fabric 1.21.1; Forge 1.20.1 and Forge 1.21.1 work the same way with their test mod):
+`./scripts/real-client-singleplayer.ps1 -BandId <band> -Loader <loader>`
 
-1. Build the band: `./scripts/build-all-version-bands.ps1 -SkipSmoke -OnlyBands 1.20-1.20.1 -OnlyLoaders fabric` (or `1.21-1.21.4`).
-2. Install the matching client profile in the official launcher: Minecraft 1.20.1 (or 1.21.1) with Fabric Loader 0.20.1, in a fresh game directory.
-3. Put two JARs in its `mods` folder: `versions/1.20.1-fabric/build/libs/player-data-rescue-1.20.1-fabric-0.1.0.jar` and `versions/1.20.1-fabric/build/testmod/pdrtest-1.20.1-fabric.jar`.
+1. The band's dedicated server makes an empty world (`prod-smoke.ps1 -SkipScenarios`), copied into the client's game folder as the singleplayer world `S8`.
+2. The client opens it with the release JAR and the test mod: the host player is created, and the test mod saves its attachment `pdrtest:broken` in the host data when the window closes.
+3. Control: a copy of that world, opened with the test mod only while the attachment's reader throws (`attachment-throws`), must fail as the game does without the mod (`Couldn't place player in world`).
+4. With both JARs and the same mode: the host joins, the chat shows the player message, and one incident is written: trigger T1, outcome rescued, only the attachment set aside with its payload file, pdrtest among the suspects, and the host data in `original/` (`level.dat` and `level.dat_old` on 1.20.1 and 1.21.1, the host's player file and its `.dat_old` on 26.3).
+5. Opened again with a reader that works: the host joins and no new incident is written.
 
-Steps:
+No opening may leave a crash report, and each window is closed as a player closes it, so the world is saved. On NeoForge the game skips the unreadable attachment and logs it (T4): the control and the rescue opening both join, and no incident is expected.
 
-1. Start the game and create a singleplayer world named `S8` (creative, flat). Note your player name (shown in the multiplayer screen or the launcher).
-2. Leave the world. The test mod has saved its attachment `pdrtest:broken` in your host data (`saves/S8/level.dat`, `Data.Player`).
-3. Close the game. In the game directory, create `pdrtest.properties` with one line: `<your name>=attachment-throws`.
-4. Start the game and open the world `S8`.
-5. Expected: the world opens and you are in it, at the position where you left, with your inventory. The chat shows "Some of your saved data could not be loaded and was set aside. An admin can restore it."
-6. Close the game. Check `saves/S8/playerdatarescue/<your uuid>/<date>/`: `original/` holds `level.dat` and `level.dat_old`; `report.txt` lists "Mod data under the key pdrtest:broken (pdrtest)" with pdrtest as most likely, and `quarantine/key.pdrtest_broken.nbt` exists. On Forge the attachment is a capability: the line is "Attachment pdrtest:broken (pdrtest)" and the file `quarantine/attachment.pdrtest_broken.nbt`.
-7. Remove `pdrtest.properties`, open the world again: no new incident folder is created.
+Two Forge problems made the client fail this check before the workarounds below:
 
-Without the mod (control): the same steps with only the test mod in `mods` end at step 4 with "Failed to load" or a return to the title screen, and the log shows `Couldn't place player in world`.
+- A Forge mod file without `pack.mcmeta` has no valid pack: the dedicated servers of the three Forge bands log "Missing metadata in pack", and Forge 1.20.1 also records a loading warning, so its client stops on a "failed to load a valid ResourcePackInfo" screen at each start and a singleplayer world never opens by itself. The Forge JARs and test mods now carry one (`pack_format` as in each Forge MDK), and `check-release-artifacts.ps1` requires it.
+- Forge 1.21.1 (52.1.20) starts its game event bus only after the client has opened a quick play world (`ClientModLoader.completeModLoading` runs after `Minecraft#onResourceLoadFinished`). That world's `AddReloadListenerEvent` is lost, the loot modifier manager is never created, and the first loot roll (a leaf decaying, water breaking a block) crashes the integrated server with "Can not retrieve LootModifierManager until resources have loaded once". It happened in 9 of 12 openings, with or without any mod. A world opened from the title screen and a dedicated server are not affected. The Forge 1.21.1 test mod starts the bus at client setup, as Forge 47 does before mod loading: 8 openings in a row then had no crash. The Forge 26.3 test mod has no such workaround, and its S8 openings had no crash.
+
+Observed on 2026-11-25 with portablemc 5.0.6, on every Tier A band, on the code of this change: S8 passed on Forge and Fabric 1.20.1, Forge, Fabric and NeoForge 1.21.1, and Forge, Fabric and NeoForge 26.3. The control failed with `Couldn't place player in world` on Forge and Fabric, and logged `Failed to deserialize data attachment` and joined on NeoForge.
 
 ## Scenarios
 

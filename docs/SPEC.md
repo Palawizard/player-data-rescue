@@ -7,7 +7,7 @@ Status: draft v1. Terms in italics are defined in the glossary at the end.
 | Context | Source of the joining player's data |
 |---|---|
 | Dedicated server, and LAN guests | `<world>/playerdata/<uuid>.dat` (gzip NBT), with `<uuid>.dat_old` as the previous save |
-| Singleplayer host and LAN host | The `Data.Player` compound in `<world>/level.dat`, with `level.dat_old` |
+| Singleplayer host and LAN host | 1.20.1 and 1.21.1: the `Data.Player` compound in `<world>/level.dat`, with `level.dat_old`. 26.3: the host's own player file, as for any other player |
 
 Both sources are handled. In every flow below, the *source file* is whichever applies.
 
@@ -170,7 +170,7 @@ S1, S3, S4 and S7, and S2, S13 and S14 on NeoForge, depend on T4. They are check
 | S5 | `<uuid>.dat` is truncated and `.dat_old` is valid. | P joins. | P joins with the `.dat_old` data. Both originals are backed up. The trigger is T2. |
 | S6 | Both files are unreadable. | P joins. | P joins as a new player. The originals are kept and the report says "unreadable file". |
 | S7 | S1 happened, then X is reinstalled. | An operator runs `restore all`. | The slot 17 item comes back once. A second `restore all` changes nothing. |
-| S8 | Singleplayer world whose host data in `level.dat` has S2's broken attachment (Forge or Fabric). | The world opens. | Same as S2, with the `level.dat` copies in `original/`. |
+| S8 | Singleplayer world whose host data has S2's broken attachment (Forge or Fabric). | The world opens. | Same as S2, with copies of the host data in `original/` (`level.dat` and `level.dat_old` on 1.20.1 and 1.21.1, the player file and its `.dat_old` on 26.3). |
 | S9 | Dedicated server with the mod, client without it. | Any scenario. | The client connects normally. Messages use vanilla text components only. |
 | S10 | The mod is removed after incidents were recorded. | The world loads. | The world loads normally, and the `playerdatarescue/` folder is ignored. |
 | S11 | The test mod throws on every placement, whatever the data. | P joins twice. | Both joins end with the vanilla disconnect. One incident and one diagnosis report are written, saying the data is not the cause and naming the test mod. The second join does not retry a rescue. Nothing loops or crashes. |
