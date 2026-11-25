@@ -28,7 +28,7 @@ public final class PdrTestForge {
 
     // Forge 52 starts the game event bus after the client has opened a quick play world, so that
     // world's AddReloadListenerEvent is dropped and its first loot roll crashes the integrated
-    // server (docs/TESTING.md, S8). Forge 47 starts the bus before mod loading.
+    // server (docs/TESTING.md, S8). Forge 47 starts it before it opens that world.
     private static void onClientSetup(FMLClientSetupEvent event) {
         MinecraftForge.EVENT_BUS.start();
     }
