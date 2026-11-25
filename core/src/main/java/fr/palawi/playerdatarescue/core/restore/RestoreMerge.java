@@ -6,6 +6,7 @@ import fr.palawi.playerdatarescue.core.nbt.NbtList;
 import fr.palawi.playerdatarescue.core.nbt.NbtTag;
 import fr.palawi.playerdatarescue.core.nbt.NbtValue;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,9 @@ public final class RestoreMerge {
     private final List<Replaced> replaced = new ArrayList<>();
     private final Map<String, List<NbtTag>> placed = new LinkedHashMap<>();
     private final Map<String, List<NbtCompound>> drops = new LinkedHashMap<>();
+    /** The keys an earlier entry of this merge replaced: a second entry on the same key is refused. */
+    private final Set<String> taken = new HashSet<>();
+
     private String current;
 
     private RestoreMerge(NbtCompound data, String attachmentContainer) {
@@ -166,6 +170,10 @@ public final class RestoreMerge {
 
     /** A section set aside whole by the minimal profile. */
     private Optional<String> section(String key, NbtTag payload) {
+        Optional<String> invalid = invalidSection(key, payload);
+        if (invalid.isPresent()) {
+            return invalid;
+        }
         if (key.equals(INVENTORY) || key.equals(ENDER_ITEMS)) {
             if (!(payload instanceof NbtList stacks)) {
                 return Optional.of("the saved section is not a list");
@@ -206,6 +214,44 @@ public final class RestoreMerge {
             return replaceIn(null, RECIPE_BOOK, payload, Section.RECIPE_BOOK);
         }
         return replaceIn(null, key, payload, Section.UNKNOWN_KEY);
+    }
+
+    /**
+     * Why a section cannot go back as a whole, checked before anything changes: an element that
+     * is not a stack or an effect, or a key that another entry of this merge already replaced.
+     */
+    private Optional<String> invalidSection(String key, NbtTag payload) {
+        List<NbtTag> elements = payload instanceof NbtList list
+                ? list.elements()
+                : payload instanceof NbtCompound compound
+                        ? List.copyOf(compound.entries().values())
+                        : List.of();
+        boolean itemsOrEffects =
+                key.equals(INVENTORY) || key.equals(ENDER_ITEMS) || key.equals(EQUIPMENT) || EFFECT_KEYS.contains(key);
+        if (itemsOrEffects && elements.stream().anyMatch(e -> !(e instanceof NbtCompound))) {
+            return Optional.of("the saved section holds an element that is not a compound");
+        }
+        List<String> claims = new ArrayList<>();
+        if (EFFECT_KEYS.contains(key)) {
+            elements.forEach(e -> claims.add(effectClaim(effectId(e))));
+        } else if (ATTACHMENT_CONTAINERS.contains(key) && payload instanceof NbtCompound attachments) {
+            attachments.keys().forEach(k -> claims.add(keyClaim(key, k)));
+        } else if (!itemsOrEffects && !ATTACHMENT_CONTAINERS.contains(key)) {
+            claims.add(keyClaim(null, key));
+        }
+        return claims.stream().filter(taken::contains).findFirst().map(RestoreMerge::takenReason);
+    }
+
+    private static String effectClaim(String name) {
+        return "effect " + name;
+    }
+
+    private static String keyClaim(String container, String key) {
+        return (container == null ? "" : container + "/") + key;
+    }
+
+    private static String takenReason(String claim) {
+        return "another entry of the same join already restores " + claim + "; queue it again after that join";
     }
 
     /** An inventory or ender chest stack, with its {@code Slot}. */
@@ -255,8 +301,11 @@ public final class RestoreMerge {
         // 1.20.1 stores effects under ActiveEffects with a numeric Id, later versions under
         // active_effects with a string id; the payload's own form says which list it belongs to.
         String key = effect.contains("Id") && !effect.contains("id") ? "ActiveEffects" : "active_effects";
-        NbtList effects = list(key);
         String name = effectId(effect);
+        if (!taken.add(effectClaim(name))) {
+            return Optional.of(takenReason(effectClaim(name)));
+        }
+        NbtList effects = list(key);
         for (int i = 0; i < effects.size(); i++) {
             if (effectId(effects.get(i)).equals(name)) {
                 replaced.add(new Replaced("effect." + name, Section.EFFECTS, Optional.empty(), effects.get(i)));
@@ -271,6 +320,9 @@ public final class RestoreMerge {
 
     /** A key of {@code container} (or of the root when null) gets the payload; what was there is kept aside. */
     private Optional<String> replaceIn(String container, String key, NbtTag payload, Section section) {
+        if (!taken.add(keyClaim(container, key))) {
+            return Optional.of(takenReason(keyClaim(container, key)));
+        }
         NbtCompound target = container == null ? data : compound(null, container);
         NbtTag before = target.get(key);
         if (before != null) {
