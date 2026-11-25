@@ -214,9 +214,10 @@ public final class PdrCommands {
                                     .append(Texts.action("show", "/" + ROOT + " show " + id + " " + s.folder())));
                 }
             }
+            RecurringIssues records =
+                    RecurringService.issues(world(c.getSource().getServer()));
             List<RecurringIssues.Issue> issues = new ArrayList<>();
-            for (RecurringIssues.Issue issue :
-                    RecurringService.issues(world(c.getSource().getServer())).all()) {
+            for (RecurringIssues.Issue issue : records.all()) {
                 if (argument == null || issue.players().containsKey(players.get(0))) {
                     issues.add(issue);
                 }
@@ -233,6 +234,20 @@ public final class PdrCommands {
                                             + ", last " + issue.last() + " ")
                                     .append(Texts.action("dismiss", "/" + ROOT + " dismiss recurring " + issue.key())));
                 }
+            }
+            List<Path> unreadable = records.unreadable();
+            if (!unreadable.isEmpty()) {
+                say(
+                        c,
+                        Component.literal(count(unreadable.size(), "recurring issue record")
+                                        + " could not be read: "
+                                        + String.join(
+                                                ", ",
+                                                unreadable.stream()
+                                                        .map(f ->
+                                                                f.getFileName().toString())
+                                                        .toList()))
+                                .withStyle(ChatFormatting.RED));
             }
             if (argument == null && !players.isEmpty()) {
                 say(c, Component.literal("Details: /" + ROOT + " list <player>"));

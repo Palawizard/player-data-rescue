@@ -53,6 +53,7 @@ final class RecurringService {
             if (failures.isEmpty()) {
                 return;
             }
+            concerned(join).add(join.id());
             RecurringIssues.Recorded recorded = issues(join.worldDirectory())
                     .record(
                             join.id(),
@@ -60,7 +61,6 @@ final class RecurringService {
                             failures.get(),
                             RescueService.config().recurringThreshold(),
                             Instant.now());
-            concerned(join).add(join.id());
             for (RecurringIssues.Issue issue : recorded.created()) {
                 LOGGER.warn(
                         "[{}] {} fails to load at every join; it is now a recurring issue, recorded in {}",
@@ -69,7 +69,7 @@ final class RecurringService {
                         issue.file());
             }
             tellOperators(join, recorded.touched());
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException | RuntimeException | LinkageError e) {
             LOGGER.error("[{}] could not update the recurring issues of {}", ModInfo.MOD_ID, join.name(), e);
         }
     }
@@ -148,8 +148,12 @@ final class RecurringService {
                     players.add(player);
                 }
             }
-            for (RecurringIssues.Issue issue : issues(world).all()) {
+            RecurringIssues issues = issues(world);
+            for (RecurringIssues.Issue issue : issues.all()) {
                 players.addAll(issue.players().keySet());
+            }
+            for (Path file : issues.unreadable()) {
+                LOGGER.warn("[{}] the recurring issue record {} cannot be read; it is left out", ModInfo.MOD_ID, file);
             }
             state.concerned.put(world, players);
         }
