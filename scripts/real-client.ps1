@@ -1,9 +1,10 @@
-# Real game client checks, dot-sourced by prod-smoke.ps1 (-RealClient). The client is the real
-# Minecraft client, started by the portablemc launcher with an offline account (ADR-PDR-011). It
-# opens a game window, so these checks run on a desktop, never in CI. Written for Windows
-# PowerShell 5.1 and PowerShell 7 (check-powershell-compat.ps1), run so far with PowerShell 7 on
-# Linux. Uses from common.ps1: $ProjectRoot and $OnWindows; from prod-smoke.ps1:
-# $javaExe, $ServerPort, $BandId, $Loader and $band.
+# Real game client checks, dot-sourced by prod-smoke.ps1 (-RealClient) and by
+# real-client-singleplayer.ps1. The client is the real Minecraft client, started by the
+# portablemc launcher with an offline account (ADR-PDR-011). It opens a game window, so these
+# checks run on a desktop, never in CI. Written for Windows PowerShell 5.1 and PowerShell 7
+# (check-powershell-compat.ps1), run so far with PowerShell 7 on Linux. Uses from common.ps1:
+# $ProjectRoot, $OnWindows and Get-BandProperties; the dedicated server scenarios also use
+# $javaExe, $ServerPort, $BandId, $Loader and $band from prod-smoke.ps1.
 
 $PortableMcVersion = '5.0.6'
 
@@ -34,9 +35,17 @@ function Get-ClientRoot {
 }
 
 function Get-ClientVersion {
-    # The portablemc version id of the band's vanilla client.
-    param([object]$Band)
-    return $Band.compileTarget
+    # The portablemc version id: the band's vanilla client, or with -Loader the band's loader on
+    # the client, for a singleplayer world with the mods.
+    param([object]$Band, [object]$LoaderConfig, [string]$Loader)
+    if (-not $Loader) { return $Band.compileTarget }
+    $props = Get-BandProperties $LoaderConfig
+    switch ($Loader) {
+        'fabric' { return "fabric:$($Band.compileTarget):$($props['fabric_loader_version'])" }
+        'forge' { return "forge::$($Band.compileTarget)-$($props['forge_version'])" }
+        'neoforge' { return "neoforge::$($props['neo_version'])" }
+    }
+    throw "No client version for loader '$Loader'."
 }
 
 function Write-ClientOptions {
@@ -67,10 +76,10 @@ function Format-ProcessArgument {
 }
 
 function Start-RealClient {
-    # Starts the client as player $Name, joining 127.0.0.1:$Port. Returns once the launcher has
-    # started the game process.
+    # Starts the client as player $Name, joining 127.0.0.1:$Port or opening the singleplayer
+    # world $World of $GameDir. Returns once the launcher has started the game process.
     param([string]$Launcher, [string]$Root, [string]$Version, [string]$JavaExe, [string]$Name, [string]$GameDir,
-        [int]$Port)
+        [int]$Port, [string]$World)
     Write-ClientOptions -GameDir $GameDir
     foreach ($stale in 'logs', 'crash-reports') {
         $path = Join-Path $GameDir $stale
@@ -78,7 +87,10 @@ function Start-RealClient {
     }
     $output = Join-Path $GameDir 'launcher.out.log'
     $launchArgs = @('--main-dir', $Root, '--output', 'machine', 'start', '--mc-dir', $GameDir, '--jvm', $JavaExe,
-        '--jvm-arg=-Xmx2G', '-u', $Name, '--join-server', '127.0.0.1', '--join-server-port', "$Port", $Version)
+        '--jvm-arg=-Xmx2G', '-u', $Name)
+    if ($World) { $launchArgs += @('--join-world', $World) }
+    else { $launchArgs += @('--join-server', '127.0.0.1', '--join-server-port', "$Port") }
+    $launchArgs += $Version
     $startArgs = @{
         FilePath               = $Launcher
         ArgumentList           = @($launchArgs | ForEach-Object { Format-ProcessArgument $_ })
@@ -143,10 +155,10 @@ function Stop-RealClientProcess {
 }
 
 function Close-RealClient {
-    # Closes the game window the way a player does, so the game stops cleanly. Windows: the
-    # window's close message. Hyprland: its window close dispatcher. Elsewhere the game is stopped
-    # with a signal. Returns true when the game stopped on its own within a minute; the process is
-    # killed otherwise.
+    # Closes the game window the way a player does, so the game stops cleanly and a singleplayer
+    # world is saved. Windows: the window's close message. Hyprland: its window close dispatcher.
+    # Elsewhere the game is stopped with a signal, not tried with a singleplayer world.
+    # Returns true when the game stopped on its own within a minute; the process is killed otherwise.
     param([hashtable]$Client)
     $game = Get-Process -Id $Client.GamePid -ErrorAction SilentlyContinue
     if (-not $game) { return $true }

@@ -60,6 +60,9 @@ foreach ($band in (Get-VersionMatrix).bands) {
                 "$modId.mixins.json", "assets/$modId/lang/en_us.json")
             # Forge 47 runs on SRG names: its mixins need the refmap (ADR-PDR-009).
             if ($loaderName -eq 'forge' -and $band.compileTarget -eq '1.20.1') { $required += "$modId.refmap.json" }
+            # Forge warns about a mod file without pack metadata; on 1.20.1 the client stops on a
+            # warning screen at every start.
+            if ($loaderName -eq 'forge') { $required += 'pack.mcmeta' }
             $zip = [System.IO.Compression.ZipFile]::OpenRead($jar.FullName)
             try {
                 $entries = @($zip.Entries | ForEach-Object { $_.FullName })
