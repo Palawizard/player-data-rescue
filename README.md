@@ -32,10 +32,11 @@ Rescues happen automatically. Each rescue writes a folder under `<world>/playerd
 
 | Command | Purpose |
 | --- | --- |
-| `/pdrescue list [player]` | List rescues |
+| `/pdrescue list [player]` | List rescues and recurring issues |
 | `/pdrescue show <player> <incident>` | Show what was set aside and why |
 | `/pdrescue restore <player> <incident> [entry\|all]` | Put set-aside parts back at the player's next join |
 | `/pdrescue dismiss <player> <incident> [entry\|all]` | Mark parts as handled |
+| `/pdrescue dismiss recurring <key>` | Close a recurring issue |
 | `/pdrescue export <player> <incident>` | Print the folder path for a bug report |
 
 Commands require permission level 3 by default. The exact behaviour is in [docs/SPEC.md](docs/SPEC.md).
