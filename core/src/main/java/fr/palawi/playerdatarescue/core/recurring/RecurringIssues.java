@@ -129,7 +129,17 @@ public final class RecurringIssues {
         List<Issue> updated = new ArrayList<>();
         for (Failure failure : failures) {
             String key = failure.key();
-            Optional<Issue> existing = find(key);
+            Optional<Issue> existing;
+            try {
+                existing = find(key);
+            } catch (IOException e) {
+                // An unreadable record of this key is left as it is, named by unreadable(); the
+                // other keys of the join still count.
+                if (current.containsKey(key)) {
+                    next.put(key, current.get(key));
+                }
+                continue;
+            }
             if (existing.isPresent()) {
                 updated.add(update(failure, player, name, now));
                 continue;

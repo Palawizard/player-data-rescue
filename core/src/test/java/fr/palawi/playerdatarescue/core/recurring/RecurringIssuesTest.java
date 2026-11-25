@@ -234,6 +234,31 @@ class RecurringIssuesTest {
     }
 
     @Test
+    void anUnreadableRecordOfAFailingKeyDoesNotStopTheOtherKeys() throws Exception {
+        fail(PLAYER, 0);
+        fail(PLAYER, 1);
+        fail(PLAYER, 2);
+        Path record = issues.folder().resolve(RecurringIssues.fileName(KEY) + ".json");
+        Files.writeString(record, "not json");
+        String other = "key.other:data";
+
+        for (int minute = 3; minute < 6; minute++) {
+            issues.record(
+                    PLAYER,
+                    "S13Bot",
+                    List.of(
+                            new RecurringIssues.Failure(KEY, payload, Optional.empty()),
+                            new RecurringIssues.Failure(other, payload, Optional.empty())),
+                    THRESHOLD,
+                    NOON.plusSeconds(60L * minute));
+        }
+
+        assertEquals(3, issues.find(other).orElseThrow().count());
+        assertEquals("not json", Files.readString(record));
+        assertEquals(List.of(record), issues.unreadable());
+    }
+
+    @Test
     void anUnreadableStreakFileCountsAsNone() throws Exception {
         Files.createDirectories(root.resolve(SECOND.toString()));
         Files.writeString(root.resolve(SECOND.toString()).resolve(RecurringIssues.STREAKS), "not json");
