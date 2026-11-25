@@ -126,7 +126,12 @@ public final class RestoreService {
         try {
             source.write(prepared.get().data());
         } catch (RuntimeException e) {
-            RestoreJoin.abort(root, id);
+            try {
+                RestoreJoin.abort(root, id);
+            } catch (IOException | RuntimeException again) {
+                // Without the record, the entries stay set aside in their incident: nothing reached the data.
+                Files.deleteIfExists(RestorePending.file(root, id));
+            }
             throw e;
         }
         LOGGER.warn(
@@ -139,8 +144,14 @@ public final class RestoreService {
         return true;
     }
 
-    /** The join ended with the player in the world, without a rescue. */
+    /**
+     * The join ended without a rescue. When the player is not in the world after all, the record
+     * stays on disk and the next join settles it from what the player file holds.
+     */
     public static void joined(GameJoin join) {
+        if (!join.placed()) {
+            return;
+        }
         Active active = ACTIVE.remove(join.id());
         if (active != null) {
             finish(join, RestoreJoin.End.joined());
@@ -157,17 +168,18 @@ public final class RestoreService {
     }
 
     /**
-     * The placement of this join failed, and the rescue, if any, has returned. In the world, the
-     * rescue result decides each entry. Out of it, the data is put back as it was before the
-     * restore (after the rescue put back what it read, the merged data), so the entries are back
-     * in their incident only.
+     * The placement of this join failed, and the rescue, if any, has returned. When it placed the
+     * player, its result decides each entry. Otherwise the data is put back as it was before the
+     * restore (after the rescue put back what it read, the merged data), and the half-placed
+     * player, loaded from the merged data, is removed without a save, so the entries are back in
+     * their incident only.
      */
-    static void afterPlacementFailure(GameJoin join) {
+    static void afterPlacementFailure(GameJoin join, boolean rescued) {
         Active active = ACTIVE.remove(join.id());
         if (active == null) {
             return;
         }
-        if (join.placed()) {
+        if (rescued) {
             RescueResult rescue = active.rescue;
             finish(
                     join,
@@ -183,6 +195,7 @@ public final class RestoreService {
         }
         try {
             if (active.written != null) {
+                join.discardHalfPlaced();
                 active.written.restore();
             }
             String reason = active.incident == null
