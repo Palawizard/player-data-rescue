@@ -241,11 +241,15 @@ public final class RescueService {
                     result.attempts(),
                     folder.resolve("report.txt"));
             notify(join, incident, shown, result.outcome());
+            RecurringService.rescued(join, result);
         }
-        RecurringService.rescued(join, result);
         return true;
     }
 
+    /**
+     * A player with no saved data at all could not join: whatever failed, the saved data is not
+     * the cause (SPEC.md section 2). Writes the diagnosis and tries no rescue until a restart.
+     */
     private static boolean diagnoseNewPlayer(GameJoin join, Exception failure) throws IOException {
         join.discardHalfPlaced();
         Path folder = new IncidentStore(join.worldDirectory()).create(join.id(), LocalDateTime.now());
