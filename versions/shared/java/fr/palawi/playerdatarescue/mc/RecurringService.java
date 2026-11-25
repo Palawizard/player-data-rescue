@@ -97,7 +97,7 @@ final class RecurringService {
             if (!issues.concerns(join.id())) {
                 concerned(join).remove(join.id());
             }
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException | RuntimeException | LinkageError e) {
             LOGGER.error("[{}] could not update the recurring issues of {}", ModInfo.MOD_ID, join.name(), e);
         }
     }
