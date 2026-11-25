@@ -29,6 +29,7 @@ param(
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 . (Join-Path $PSScriptRoot 'smoke-scenarios.ps1')
+. (Join-Path $PSScriptRoot 'smoke-recurring.ps1')
 . (Join-Path $PSScriptRoot 'real-client.ps1')
 
 if ($RealClient -and $SkipScenarios) { throw '-RealClient needs the scenarios: drop -SkipScenarios.' }
