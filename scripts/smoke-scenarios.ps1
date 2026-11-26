@@ -7,6 +7,7 @@
 # Works on Windows PowerShell 5.1 and on PowerShell 7.
 # Uses from prod-smoke.ps1: $band, $BandId, $Loader, $serverDir, $javaExe, $ServerPort,
 # $RconPort, $rconPassword, and Read-ExactBytes, Send-RconPacket, Read-RconPacketId.
+# S13 and S14 also check the recurring record (smoke-recurring.ps1).
 # Proof is a test mod log line expected while preparing; JoinProof is expected at each
 # later join, so a scenario cannot pass without the failure it is meant to cause. After the
 # scenarios, Invoke-TeleportCheck checks that the join client keeps a teleported player loaded.
@@ -29,8 +30,10 @@ $scenarioDefinitions = @(
     @{ Id = 'S11new'; Player = 'S11NewBot'; Prepare = @(); Join = @('throw-on-placement'); Setup = @(); Proof = '';
         JoinProof = 'pdrtest: deliberate failure: placement of S11NewBot' }
     @{ Id = 'S12'; Player = 'S12Bot'; Prepare = @(''); Join = @(''); Setup = @(); Proof = '' }
-    @{ Id = 'S13'; Player = 'S13Bot'; Prepare = @('unreadable-attachment'); Join = @('unreadable-attachment', 'unreadable-attachment'); Setup = @();
+    @{ Id = 'S13'; Player = 'S13Bot'; Prepare = @('unreadable-attachment'); Setup = @(); Operator = $true;
+        Join = @('unreadable-attachment', 'unreadable-attachment', 'unreadable-attachment', 'unreadable-attachment');
         Proof = 'saved attachment pdrtest:broken of S13Bot as unreadable'; JoinProof = 'pdrtest: deliberate failure: attachment pdrtest:broken of S13Bot cannot read back' }
+    @{ Id = 'S14'; Player = 'S13Bot'; Prepare = @(); Join = @(''); Setup = @(); Proof = '' }
     @{ Id = 'S15'; Player = 'S15Bot'; Prepare = @('attach'); Join = @('attach,placement-rejects-attachment'); Setup = @();
         Proof = 'saved attachment pdrtest:broken of S15Bot as int'; JoinProof = 'pdrtest: deliberate failure: placement of S15Bot with attachment pdrtest:broken' }
 )
@@ -49,6 +52,7 @@ $expectedOutcomes = @{
     'S11new' = 'invalid'
     'S12' = 'joined'
     'S13' = 'joined'
+    'S14' = 'joined'
     'S15' = 'joined'
 }
 
@@ -73,9 +77,11 @@ $expectedIncidents = @{
         Failure = 'pdrtest: deliberate failure: placement of S11Bot' }
     'S11new' = @{ Count = 1; Trigger = 'T3'; Outcome = 'not_data_related'; Suspect = 'pdrtest'; Originals = 0; Report = 'could not join as a new player' }
     'S12' = $null
-    'S13' = @{ Count = 2; Trigger = 'T1'; Outcome = 'rescued'; Entry = 'attachment.pdrtest:broken'; Suspect = 'pdrtest'; Message = $playerMessage }
-    'S13/fabric' = @{ Count = 2; Trigger = 'T1'; Outcome = 'rescued'; Entry = 'key.pdrtest:broken'; Suspect = 'pdrtest'; Message = $playerMessage }
+    # S13: every join keeps its incident, the recurring record only groups them (SPEC.md section 4.4).
+    'S13' = @{ Count = 4; Trigger = 'T1'; Outcome = 'rescued'; Entry = 'attachment.pdrtest:broken'; Suspect = 'pdrtest'; Message = $playerMessage }
+    'S13/fabric' = @{ Count = 4; Trigger = 'T1'; Outcome = 'rescued'; Entry = 'key.pdrtest:broken'; Suspect = 'pdrtest'; Message = $playerMessage }
     'S13/neoforge' = $null
+    'S14' = $null
     # S15: the placement fails because of the attachment (T3), so the minimal profile is placed on
     # the same connection and every other section is set aside whole, the attachment among them.
     'S15' = @{ Count = 1; Trigger = 'T3'; Outcome = 'minimal_profile'; Includes = 'section.ForgeCaps'; Suspect = 'pdrtest'; Message = $playerMessage;
@@ -462,10 +468,12 @@ function Invoke-RestoreCheck {
 }
 
 function Start-Operator {
-    # An online operator for the S2 notice (SPEC.md step 7): joins, is made an operator, and stays.
+    # An online operator for the S2 and S13 notices (SPEC.md step 7 and section 4.4): joins, is
+    # made an operator, and stays.
+    param([int]$StaySeconds)
     $offset = Get-LatestLogLength
     Set-PlayerModes -Player 'OpBot' -Modes ''
-    $bot = Start-JoinBot -Player 'OpBot' -StaySeconds 25
+    $bot = Start-JoinBot -Player 'OpBot' -StaySeconds $StaySeconds
     if (-not (Wait-ForLog -Offset $offset -Pattern "OpBot\[[^\]]*\] logged in")) { throw 'OpBot never logged in.' }
     Invoke-RconCommand -Command 'op OpBot' | Out-Null
     Start-Sleep -Seconds 1
@@ -557,12 +565,16 @@ function Invoke-SmokeScenarios {
             if ($scenario.Proof -and -not ((Get-LogSince -Offset $prepareOffset) -match $scenario.Proof)) {
                 throw "$id was not set up: the log has no '$($scenario.Proof)' line from the test mod."
             }
-            Save-ScenarioFixtures -ScenarioId $id -Player $scenario.Player
+            if ($scenario.Prepare.Count -gt 0) { Save-ScenarioFixtures -ScenarioId $id -Player $scenario.Player }
+            $reset = Reset-RecurringStreaks -Scenario $scenario
+            $failures += $reset.Problems
+            $summary += $reset.Lines
             $expected = Get-ExpectedOutcome -ScenarioId $id
             $incidentsBefore = Get-PlayerIncidents -Player $scenario.Player
             $operator = $null
             if ($scenario.Operator -and $null -ne (Get-ScenarioValue -Table $expectedIncidents -ScenarioId $id).Value) {
-                $operator = Start-Operator
+                # About 7 to 10 s per join; Test-RecurringNotice checks the operator was there for all of them.
+                $operator = Start-Operator -StaySeconds (15 + 10 * $scenario.Join.Count)
             }
             $botOutputs = ''
             $scenarioLogOffset = Get-LatestLogLength
@@ -581,6 +593,7 @@ function Invoke-SmokeScenarios {
                 $line = "$id $($scenario.Player): $($result.Outcome) ($($result.Detail)); log has 'Couldn't place player in world': $placeFailed; expected: $expected"
                 $summary += $line
                 if ($result.Outcome -ne $expected) { $failures += $line }
+                $failures += Test-RecurringJoin -Scenario $scenario -Index $j -JoinLog $joinLog -BotOutput $botOutput
                 if ($result.Outcome -eq 'invalid' -and -not $placeFailed) { $failures += "$id disconnected without the 'Couldn't place player in world' log line." }
                 if (@('S11', 'S15') -contains $id -and $j -eq 0 -and @([regex]::Matches($joinLog, "$($scenario.Player)\[[^\]]*\] logged in")).Count -lt 2) {
                     $failures += "$id first join: the minimal profile was not placed after the failed placement."
@@ -609,6 +622,11 @@ function Invoke-SmokeScenarios {
             }
             $scenarioLog = Get-LogSince -Offset $scenarioLogOffset
             $failures += Test-ScenarioIncidents -Scenario $scenario -Before $incidentsBefore -BotOutputs $botOutputs -JoinLog $scenarioLog
+            if (@('S13', 'S14') -contains $id) {
+                $recurring = Test-RecurringRecord -Scenario $scenario -JoinLog $scenarioLog
+                $failures += $recurring.Problems
+                $summary += $recurring.Lines
+            }
             if ($operator) {
                 $operatorOutput = Wait-JoinBot -Bot $operator
                 # The notice is a translatable component: its English fallback and its arguments
@@ -618,6 +636,9 @@ function Invoke-SmokeScenarios {
                     })
                 if ($notice.Count -gt 0) { $summary += "$id operator notice received by OpBot" }
                 else { $failures += "$id the operator OpBot did not get the rescue notice for $($scenario.Player)." }
+                $recurringNotice = Test-RecurringNotice -Scenario $scenario -OperatorOutput $operatorOutput
+                $failures += $recurringNotice.Problems
+                $summary += $recurringNotice.Lines
             }
         } catch {
             $failures += "$id failed: $($_.Exception.Message)"

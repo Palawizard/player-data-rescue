@@ -142,6 +142,21 @@ class RecurringIssuesTest {
     }
 
     @Test
+    void aRecordMadeByOnePlayersStreakTakesInTheOtherStreaksOnThatKey() throws Exception {
+        fail(SECOND, "Second", KEY, 0);
+        fail(PLAYER, 1);
+        fail(PLAYER, 2);
+
+        RecurringIssues.Recorded third = fail(PLAYER, 3);
+
+        assertEquals(1, third.created().size());
+        RecurringIssues.Issue issue = issues.find(KEY).orElseThrow();
+        assertEquals(4, issue.count());
+        assertEquals(Set.of("S13Bot", "Second"), Set.copyOf(issue.players().values()));
+        assertTrue(Files.notExists(root.resolve(SECOND.toString()).resolve(RecurringIssues.STREAKS)));
+    }
+
+    @Test
     void theRecordClosesWhenTheKeyLoadsAgainAndNothingIsDeleted() throws Exception {
         fail(PLAYER, 0);
         fail(PLAYER, 1);
